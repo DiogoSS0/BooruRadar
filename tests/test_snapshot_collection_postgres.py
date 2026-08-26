@@ -61,7 +61,7 @@ def test_scenario_1_success():
         db_url = os.environ.get("BOORURADAR_DATABASE_URL", "postgresql+psycopg:///booruradar_integration")
         engine = create_async_engine(db_url)
         await clean_database(engine)
-        
+
         test_booru_id = uuid.uuid4()
         test_booru = Booru(
             id=test_booru_id,
@@ -70,11 +70,11 @@ def test_scenario_1_success():
             adapter_family=AdapterFamily.DANBOORU.value,
             adapter_name="danbooru",
         )
-        
+
         async with AsyncSession(engine, expire_on_commit=False) as session:
             session.add(test_booru)
             await session.commit()
-            
+
         async with AsyncSession(engine, expire_on_commit=False) as session:
             booru = await session.get(Booru, test_booru_id)
             async with httpx.AsyncClient(transport=transport_for_count(12022661)) as client:
@@ -83,22 +83,22 @@ def test_scenario_1_success():
                     booru,
                     DanbooruAdapter("https://danbooru.test", client),
                 )
-        
+
         # Verify physically from PostgreSQL after commit
         async with AsyncSession(engine) as session:
             crawl_runs = (await session.execute(select(CrawlRun))).scalars().all()
             assert len(crawl_runs) == 1
             run_rec = crawl_runs[0]
             assert run_rec.status == CrawlRunStatus.SUCCEEDED
-            
+
             snapshots = (await session.execute(select(BooruSnapshot))).scalars().all()
             assert len(snapshots) == 1
             snap = snapshots[0]
-            
+
             assert "total_posts" in snap.metrics
             assert snap.metrics["total_posts"]["provenance"] == "estimated"
             assert snap.metrics["total_posts"]["unit"] == "posts"
-            
+
             # Verify CrawlRun.details survived serialization
             details = run_rec.details
             assert "quality_status" in details
@@ -106,12 +106,12 @@ def test_scenario_1_success():
             assert isinstance(details.get("responses"), list)
             assert len(details["responses"]) > 0
             assert "response_sha256" in details["responses"][0]
-            
+
             # Verify no complete raw response body is persisted
             details_json = json.dumps(details)
             assert "cdn.example.invalid" not in details_json
             assert "file_url" not in details_json
-            
+
         await engine.dispose()
     run(exercise())
 
@@ -120,7 +120,7 @@ def test_scenario_2_hard_invalid():
         db_url = os.environ.get("BOORURADAR_DATABASE_URL", "postgresql+psycopg:///booruradar_integration")
         engine = create_async_engine(db_url)
         await clean_database(engine)
-        
+
         test_booru_id = uuid.uuid4()
         test_booru = Booru(
             id=test_booru_id,
@@ -132,7 +132,7 @@ def test_scenario_2_hard_invalid():
         async with AsyncSession(engine, expire_on_commit=False) as session:
             session.add(test_booru)
             await session.commit()
-            
+
         async with AsyncSession(engine, expire_on_commit=False) as session:
             booru = await session.get(Booru, test_booru_id)
             async with httpx.AsyncClient(transport=transport_for_count(-1)) as client:
@@ -142,17 +142,17 @@ def test_scenario_2_hard_invalid():
                         booru,
                         DanbooruAdapter("https://danbooru.test", client),
                     )
-        
+
         async with AsyncSession(engine) as session:
             crawl_runs = (await session.execute(select(CrawlRun))).scalars().all()
             assert len(crawl_runs) == 1
             run_rec = crawl_runs[0]
             assert run_rec.status == CrawlRunStatus.FAILED
             assert run_rec.details["quality_status"] == "hard_invalid"
-            
+
             snapshots = (await session.execute(select(BooruSnapshot))).scalars().all()
             assert len(snapshots) == 0
-            
+
         await engine.dispose()
     run(exercise())
 
@@ -161,7 +161,7 @@ def test_scenario_3_suspicious():
         db_url = os.environ.get("BOORURADAR_DATABASE_URL", "postgresql+psycopg:///booruradar_integration")
         engine = create_async_engine(db_url)
         await clean_database(engine)
-        
+
         test_booru_id = uuid.uuid4()
         test_booru = Booru(
             id=test_booru_id,
@@ -203,7 +203,7 @@ def test_scenario_3_suspicious():
             session.add(dummy_run)
             session.add(snap)
             await session.commit()
-            
+
         async with AsyncSession(engine, expire_on_commit=False) as session:
             booru = await session.get(Booru, test_booru_id)
             async with httpx.AsyncClient(transport=transport_for_count(1_000_000)) as client:
@@ -213,7 +213,7 @@ def test_scenario_3_suspicious():
                         booru,
                         DanbooruAdapter("https://danbooru.test", client),
                     )
-        
+
         async with AsyncSession(engine) as session:
             crawl_runs = (await session.execute(select(CrawlRun))).scalars().all()
             assert len(crawl_runs) == 2 # 1 dummy, 1 failed
@@ -221,10 +221,64 @@ def test_scenario_3_suspicious():
             assert len(failed_runs) == 1
             assert failed_runs[0].details["quality_status"] == "suspicious"
             assert "health_status" not in failed_runs[0].details
-            
+
             snapshots = (await session.execute(select(BooruSnapshot))).scalars().all()
             assert len(snapshots) == 1 # only the dummy remains
             assert snapshots[0].metrics["total_posts"]["value"] == 12_000_000
-            
+
+        await engine.dispose()
+    run(exercise())
+
+def test_transaction_verification():
+    async def exercise():
+        db_url = os.environ.get("BOORURADAR_DATABASE_URL", "postgresql+psycopg:///booruradar_integration")
+        engine = create_async_engine(db_url)
+        await clean_database(engine)
+
+        test_booru_id = uuid.uuid4()
+        test_booru = Booru(
+            id=test_booru_id,
+            name="Danbooru Integration",
+            canonical_url="https://danbooru.test",
+            adapter_family=AdapterFamily.DANBOORU.value,
+            adapter_name="danbooru",
+        )
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            session.add(test_booru)
+            await session.commit()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            from sqlalchemy import create_engine, text
+            sync_engine = create_engine(db_url)
+            with sync_engine.connect() as conn:
+                res = conn.execute(text("SELECT status FROM crawl_runs WHERE booru_id = :b"), {"b": test_booru_id}).mappings().all()
+                assert len(res) == 1
+                assert res[0]["status"] == "running"
+            sync_engine.dispose()
+
+            if request.url.path == "/counts/posts.json":
+                return httpx.Response(500, text="Internal Server Error")
+            if request.url.path == "/posts.json":
+                return httpx.Response(200, json=POSTS)
+            return httpx.Response(200, json={})
+
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            booru = await session.get(Booru, test_booru_id)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with pytest.raises(httpx.HTTPError):
+                    await DanbooruSnapshotCollectionService().collect(
+                        session,
+                        booru,
+                        DanbooruAdapter("https://danbooru.test", client),
+                    )
+
+        async with AsyncSession(engine) as session:
+            crawl_runs = (await session.execute(select(CrawlRun))).scalars().all()
+            assert len(crawl_runs) == 1
+            assert crawl_runs[0].status == CrawlRunStatus.FAILED
+
+            snapshots = (await session.execute(select(BooruSnapshot))).scalars().all()
+            assert len(snapshots) == 0
+
         await engine.dispose()
     run(exercise())
