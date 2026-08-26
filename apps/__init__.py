@@ -1,0 +1,1 @@
+"""BooruRadar process entry points."""

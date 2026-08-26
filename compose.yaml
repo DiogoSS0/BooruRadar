@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-booruradar}
+      POSTGRES_USER: ${POSTGRES_USER:-booruradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booruradar}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - booruradar_postgres:/var/lib/postgresql/data
+
+volumes:
+  booruradar_postgres:

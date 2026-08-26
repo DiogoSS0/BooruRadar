@@ -1,0 +1,7 @@
+Alembic owns all changes to the PostgreSQL schema.
+
+Create a revision with:
+
+    alembic revision --autogenerate -m "describe change"
+
+Review generated migrations before applying them.
