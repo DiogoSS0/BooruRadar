@@ -76,3 +76,16 @@ docs/                  Architecture and data-model documentation
 
 See [the architecture](docs/ARCHITECTURE.md), [the data model](docs/DATA_MODEL.md),
 and [the adapter guide](docs/ADAPTERS.md) for the design boundaries.
+
+## Historical Analytics
+
+A read-only CLI is available to compute basic historical analytics:
+
+```bash
+BOORURADAR_DATABASE_URL='postgresql+psycopg:///booruradar_history' \
+.venv/bin/python -m booruradar.stats danbooru
+```
+
+The analytics service requires exactly two compatible accepted snapshots for a given booru. The target snapshots must share the `estimated` provenance and the `"posts"` unit.
+
+The CLI calculates the `POSTS_PER_DAY` growth normalized to exactly 24 hours, adjusting for the true real-world elapsed time between the two observations. No snapshots or network requests are created during this read-only query.
