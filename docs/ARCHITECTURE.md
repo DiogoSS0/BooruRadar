@@ -37,8 +37,8 @@ cases exist.
 ### Worker
 
 `apps.worker.main` supplies signal handling and a polling shell. It performs no crawl
-until a later milestone adds scheduling and registers concrete adapters. This keeps
-the initial operational contract honest instead of producing synthetic data.
+until a later milestone adds scheduling. The registered Danbooru adapter and first
+snapshot service are invoked explicitly; they are not a production scheduler.
 
 ## Collection boundary
 
@@ -60,12 +60,41 @@ Recent-post DTOs contain identifiers, timestamps, ratings, tag names, and an opt
 HTML post URL. There are deliberately no image bytes, image URLs, download methods, or
 media-storage fields.
 
+## First snapshot quality boundary
+
+The modern Danbooru path is:
+
+```text
+public API → normalized adapter result → candidate validation → anomaly check
+           → accepted BooruSnapshot
+```
+
+Impossible values and malformed required structures are **hard invalid**. They fail
+the crawl and never create a snapshot. Structurally valid values can be
+**suspicious** when they differ catastrophically from the latest accepted
+`total_posts`; they are also blocked, but remain distinct from hard-invalid data.
+The hard gate requires `total_posts` to be a non-boolean, non-negative integer with
+`estimated` provenance and `posts` as its unit; the adapter applies corresponding
+shape/type checks before constructing normalized post and tag metadata.
+Because Danbooru's count is estimated, ordinary decreases are allowed. The initial
+bootstrap policy blocks a drop below half the previous value only when the absolute
+drop is at least 100,000 posts, or growth above five times the previous value only
+when the absolute increase is at least 1,000,000 posts. These injectable thresholds
+are not a universal trust rule.
+
+Site health remains in `BooruSnapshot.health_status`. Observation quality is recorded
+separately in `CrawlRun.details` and is never encoded as a health value.
+
 ## Extension model
 
 `AdapterRegistry` accepts any concrete `BooruAdapter`. Built-in implementations will
 live under the `danbooru`, `gelbooru`, and `shimmie` namespaces. One-off integrations
 live under `custom`. This is an explicit in-process registry; dynamic plugin loading
 is deferred until a real deployment requires it.
+
+Canonical URL uniqueness does not solve aliases, historical domains, API hostnames,
+redirects, or `www` variants. Alias modeling remains required before broad automatic
+discovery, but is intentionally deferred together with scheduling.
 
 ## Configuration and logging
 

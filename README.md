@@ -5,6 +5,10 @@ provides the standalone backend foundation: a FastAPI process, a worker process,
 PostgreSQL persistence, SQLAlchemy 2 models, Alembic migrations, and an asynchronous
 adapter contract.
 
+The first vertical collection path supports the modern public Danbooru API. It
+normalizes metadata, applies a small quality gate, records bounded response evidence
+on `CrawlRun`, and writes only accepted `BooruSnapshot` observations.
+
 This milestone does **not** include a frontend, users, authentication, ownership
 claims, payments, recommendations, a global Booru Score, or image downloading and
 storage.
@@ -40,9 +44,9 @@ Run the worker shell once:
 python -m apps.worker.main --once
 ```
 
-No collectors are registered in Milestone 0, so the worker deliberately performs an
-empty scheduling cycle. Concrete adapters and crawl scheduling belong to later
-milestones.
+The modern Danbooru adapter is registered, but the worker deliberately performs an
+empty scheduling cycle. Scheduling, retries, and recurring collection remain future
+work.
 
 Run tests:
 

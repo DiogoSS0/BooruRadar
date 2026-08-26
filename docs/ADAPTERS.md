@@ -25,6 +25,22 @@ adapter should raise `UnsupportedCapabilityError`.
 - Shimmie implementations: `booruradar/adapters/shimmie/`
 - Other site-specific implementations: `booruradar/adapters/custom/`
 
-Milestone 0 defines these extension points but ships no concrete collector. An
-adapter must not download images or return direct media URLs; the project collects
+An adapter must not download images or return direct media URLs; the project collects
 public metadata only.
+
+## Modern Danbooru
+
+`DanbooruAdapter` supports the verified modern API shape using:
+
+- `GET /posts.json` for detection, health, and recent post metadata;
+- `GET /counts/posts.json` for `total_posts`;
+- `GET /tags.json` for explicitly requested tag names.
+
+Danbooru's count endpoint estimates by default, so `total_posts` is always recorded
+with `estimated` provenance. Tag counts and mapped post metadata are `observed`.
+Recent-post requests are capped at 100. Tag requests are capped at 25 explicit names;
+when `tag_names` is `None`, the adapter returns no tags and performs no request. This
+prevents an accidental full tag crawl.
+
+The adapter maps only post ID, creation time, raw rating, tag names, and the HTML post
+page URL. Media asset objects, direct file/CDN URLs, and image bytes are discarded.

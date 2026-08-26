@@ -17,6 +17,11 @@ Operational record for one adapter attempt against one booru. The status lifecyc
 `pending`, `running`, then one of `succeeded`, `failed`, or `cancelled`. Error text and
 small structured execution details belong here; collected statistics do not.
 
+For the Danbooru collection path, `details` stores the adapter/version, endpoint
+identifiers, HTTP status, content type, SHA-256 response fingerprint, and quality
+status/flags. The hash is only a fingerprint: response bodies are not archived and
+cannot be reconstructed from it. Details contain neither media URLs nor image data.
+
 ### `booru_snapshots`
 
 Append-only site observations associated with a crawl run. Health and capabilities
