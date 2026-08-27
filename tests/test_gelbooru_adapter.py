@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from booruradar.adapters import registry
 from booruradar.adapters.gelbooru import GelbooruAdapter, GelbooruResponseError
 from booruradar.core.enums import AdapterFamily, MetricProvenance
 from booruradar.adapters.schemas import RecentPostMetadata
@@ -279,3 +280,7 @@ async def test_evidence_contains_no_raw_body_media_url():
         assert not hasattr(ev, "file_url")
         # Ensure string representation doesn't leak it
         assert "https://evil/media.jpg" not in str(ev.model_dump())
+
+
+def test_global_registry_contains_gelbooru_adapter():
+    assert "gelbooru" in registry.registered_names

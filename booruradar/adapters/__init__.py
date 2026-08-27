@@ -1,8 +1,13 @@
 """Public adapter API."""
 
-from booruradar.adapters.base import BooruAdapter, UnsupportedCapabilityError
+from booruradar.adapters.base import (
+    AdapterResponseError,
+    BooruAdapter,
+    UnsupportedCapabilityError,
+)
 from booruradar.adapters.danbooru import DanbooruAdapter
 from booruradar.adapters.evidence import ResponseEvidence
+from booruradar.adapters.gelbooru import GelbooruAdapter
 from booruradar.adapters.registry import AdapterRegistry, registry
 from booruradar.adapters.schemas import (
     AdapterCapability,
@@ -16,10 +21,12 @@ from booruradar.adapters.schemas import (
 
 __all__ = [
     "AdapterCapability",
+    "AdapterResponseError",
     "AdapterRegistry",
     "BooruAdapter",
     "CapabilityDiscovery",
     "DanbooruAdapter",
+    "GelbooruAdapter",
     "HealthCheck",
     "PublicStatistics",
     "RecentPostMetadata",
@@ -31,3 +38,4 @@ __all__ = [
 ]
 
 registry.register(DanbooruAdapter)
+registry.register(GelbooruAdapter)

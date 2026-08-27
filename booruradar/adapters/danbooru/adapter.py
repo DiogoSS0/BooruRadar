@@ -9,7 +9,7 @@ import httpx
 from pydantic import ValidationError
 
 from booruradar import __version__
-from booruradar.adapters.base import BooruAdapter
+from booruradar.adapters.base import AdapterResponseError, BooruAdapter
 from booruradar.adapters.evidence import ResponseEvidence, fingerprint_response
 from booruradar.adapters.schemas import (
     AdapterCapability,
@@ -24,7 +24,7 @@ from booruradar.core.enums import AdapterFamily, MetricProvenance
 from booruradar.models.metrics import MetricEnvelope
 
 
-class DanbooruResponseError(ValueError):
+class DanbooruResponseError(AdapterResponseError):
     """Raised when a modern Danbooru response cannot be normalized safely."""
 
 

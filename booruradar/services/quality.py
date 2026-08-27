@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, ValidationError, model_validator
 
-from booruradar.core.enums import MetricProvenance
+from booruradar.core.enums import AdapterFamily, MetricProvenance
 from booruradar.models.metrics import MetricMap
 from booruradar.services.inspection import InspectionResult
 
@@ -48,10 +48,6 @@ class SnapshotCandidate(BaseModel):
             raise ValueError("total_posts must be an integer")
         if metric.value < 0:
             raise ValueError("total_posts must be non-negative")
-        if metric.provenance is not MetricProvenance.ESTIMATED:
-            raise ValueError("Danbooru total_posts must be estimated")
-        if metric.unit != "posts":
-            raise ValueError("total_posts unit must be posts")
         return self
 
     @property
@@ -87,13 +83,73 @@ class TotalPostsAnomalyPolicy:
         return ()
 
 
-def build_snapshot_candidate(inspection: InspectionResult, source_url: str) -> SnapshotCandidate:
+@dataclass(frozen=True)
+class SnapshotCollectionPolicy:
+    """Family-specific rules for accepting a normalized historical snapshot."""
+
+    adapter_family: AdapterFamily
+    total_posts_provenance: MetricProvenance
+    total_posts_unit: str
+    statistics_path: str
+    anomaly_policy: TotalPostsAnomalyPolicy = TotalPostsAnomalyPolicy()
+
+    def __post_init__(self) -> None:
+        if not self.total_posts_unit:
+            raise ValueError("total_posts_unit must be non-empty")
+        if not self.statistics_path.startswith("/"):
+            raise ValueError("statistics_path must be absolute")
+
+    def validate_candidate(self, candidate: SnapshotCandidate) -> None:
+        metric = candidate.metrics.root["total_posts"]
+        if metric.provenance is not self.total_posts_provenance:
+            raise HardInvalidObservationError(
+                f"{self.adapter_family.value} total_posts must be "
+                f"{self.total_posts_provenance.value}"
+            )
+        if metric.unit != self.total_posts_unit:
+            raise HardInvalidObservationError(
+                f"{self.adapter_family.value} total_posts unit must be "
+                f"{self.total_posts_unit}"
+            )
+
+    def statistics_url(self, base_url: str) -> str:
+        return f"{base_url.rstrip('/')}{self.statistics_path}"
+
+    def previous_total_posts(self, metrics: object) -> int | None:
+        return previous_total_posts(
+            metrics,
+            provenance=self.total_posts_provenance,
+            unit=self.total_posts_unit,
+        )
+
+
+DANBOORU_SNAPSHOT_POLICY = SnapshotCollectionPolicy(
+    adapter_family=AdapterFamily.DANBOORU,
+    total_posts_provenance=MetricProvenance.ESTIMATED,
+    total_posts_unit="posts",
+    statistics_path="/counts/posts.json",
+)
+
+GELBOORU_SNAPSHOT_POLICY = SnapshotCollectionPolicy(
+    adapter_family=AdapterFamily.GELBOORU,
+    total_posts_provenance=MetricProvenance.OBSERVED,
+    total_posts_unit="posts",
+    statistics_path="/index.php?page=dapi&s=post&q=index&limit=1",
+)
+
+
+def build_snapshot_candidate(
+    inspection: InspectionResult,
+    source_url: str,
+    *,
+    policy: SnapshotCollectionPolicy = DANBOORU_SNAPSHOT_POLICY,
+) -> SnapshotCandidate:
     statistics = inspection.public_statistics
     if statistics is None:
         raise HardInvalidObservationError("public statistics were not collected")
 
     try:
-        return SnapshotCandidate(
+        candidate = SnapshotCandidate(
             captured_at=statistics.collected_at,
             health_status=inspection.health.status,
             health_provenance=inspection.health.provenance,
@@ -106,9 +162,16 @@ def build_snapshot_candidate(inspection: InspectionResult, source_url: str) -> S
         )
     except ValidationError as error:
         raise HardInvalidObservationError("normalized snapshot candidate failed validation") from error
+    policy.validate_candidate(candidate)
+    return candidate
 
 
-def previous_total_posts(metrics: object) -> int | None:
+def previous_total_posts(
+    metrics: object,
+    *,
+    provenance: MetricProvenance = MetricProvenance.ESTIMATED,
+    unit: str = "posts",
+) -> int | None:
     try:
         metric_map = MetricMap.model_validate(metrics)
     except ValidationError:
@@ -118,8 +181,8 @@ def previous_total_posts(metrics: object) -> int | None:
         return None
     if metric.value < 0:
         return None
-    if metric.provenance is not MetricProvenance.ESTIMATED:
+    if metric.provenance is not provenance:
         return None
-    if metric.unit != "posts":
+    if metric.unit != unit:
         return None
     return metric.value

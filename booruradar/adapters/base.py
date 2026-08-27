@@ -6,6 +6,7 @@ from typing import ClassVar
 
 import httpx
 
+from booruradar.adapters.evidence import ResponseEvidence
 from booruradar.adapters.schemas import (
     CapabilityDiscovery,
     HealthCheck,
@@ -21,6 +22,10 @@ class UnsupportedCapabilityError(RuntimeError):
     """Raised when a caller requests a capability the site cannot provide."""
 
 
+class AdapterResponseError(ValueError):
+    """Raised when an adapter response cannot be normalized safely."""
+
+
 class BooruAdapter(ABC):
     """Metadata-only contract implemented by every supported booru family."""
 
@@ -30,6 +35,15 @@ class BooruAdapter(ABC):
     def __init__(self, base_url: str, client: httpx.AsyncClient) -> None:
         self.base_url = base_url.rstrip("/")
         self.client = client
+
+    @property
+    def request_evidence(self) -> tuple[ResponseEvidence, ...]:
+        """Return bounded response fingerprints collected by this adapter."""
+
+        return ()
+
+    def clear_request_evidence(self) -> None:
+        """Clear response fingerprints before a new collection run."""
 
     @classmethod
     @abstractmethod
