@@ -1,17 +1,21 @@
 # BooruRadar
 
-BooruRadar is a metadata monitoring service for public booru sites. Milestone 0
-provides the standalone backend foundation: a FastAPI process, a worker process,
-PostgreSQL persistence, SQLAlchemy 2 models, Alembic migrations, and an asynchronous
-adapter contract.
+BooruRadar is a metadata-only monitoring service for public booru sites. The current
+product slice collects accepted history for two explicit targets, exposes a read-only
+catalog API, and serves a small dashboard over that API:
 
-The first vertical collection path supports the modern public Danbooru API. It
-normalizes metadata, applies a small quality gate, records bounded response evidence
-on `CrawlRun`, and writes only accepted `BooruSnapshot` observations.
+- `danbooru` uses the modern Danbooru adapter and records `total_posts` as
+  `estimated`;
+- `safebooru` uses the Gelbooru-family adapter and records `total_posts` as
+  `observed`.
 
-This milestone does **not** include a frontend, users, authentication, ownership
-claims, payments, recommendations, a global Booru Score, or image downloading and
-storage.
+Adapters normalize public aggregate data and the minimum recent-post metadata needed
+for inspection. BooruRadar does not download or persist image/video bytes, direct
+media URLs, or raw response bodies. Crawl evidence is limited to endpoint identifiers,
+HTTP status, content type, and a SHA-256 response fingerprint.
+
+The product does not include users, authentication, ownership claims, payments,
+recommendations, a global Booru Score, or an image pipeline.
 
 ## Requirements
 
@@ -29,30 +33,93 @@ docker compose up -d postgres
 alembic upgrade head
 ```
 
-Run the API:
+## API and dashboard
+
+Run the development API against the application history database you intend to read:
 
 ```bash
-uvicorn apps.api.main:app --reload
+BOORURADAR_DATABASE_URL='postgresql+psycopg:///booruradar_history' \
+.venv/bin/python -m apps.api.main
 ```
 
-The liveness endpoint is `GET /health`; `GET /health/ready` also checks PostgreSQL.
-Interactive OpenAPI documentation is available at `/docs` while the API is running.
+`booruradar_history` is an application/history target for the API and dashboard, not
+the disposable integration-test database. The default Compose setup can instead use
+the URL in `.env`.
 
-Run the worker shell once:
+While the API is running:
+
+- `GET /` serves the read-only dashboard;
+- `/docs` serves interactive OpenAPI documentation;
+- `GET /health` reports process liveness;
+- `GET /health/ready` also checks PostgreSQL;
+- `GET /api/v1/boorus` lists enabled boorus and their latest snapshot;
+- `GET /api/v1/boorus/{booru_id}` returns one enabled booru;
+- `GET /api/v1/boorus/{booru_id}/snapshots` returns recent accepted history;
+- `GET /api/v1/boorus/{booru_id}/growth` returns latest-pair growth or an explicit
+  unavailable reason;
+- `GET /api/v1/compare?booru_id=<uuid>&booru_id=<uuid>` compares two to eight unique
+  enabled boorus, keeping each booru's growth calculation isolated to its own history.
+
+The dashboard and catalog API are read-only projections. They expose normalized
+aggregate metrics and provenance, never adapter response payloads or media data.
+
+## Manual collection
+
+Use the configured application database and invoke either target explicitly:
 
 ```bash
-python -m apps.worker.main --once
+.venv/bin/python -m booruradar.collect danbooru
+.venv/bin/python -m booruradar.collect safebooru
 ```
 
-The modern Danbooru adapter is registered, but the worker deliberately performs an
-empty scheduling cycle. Scheduling, retries, and recurring collection remain future
-work.
-
-Run tests:
+Collection is scoped by the selected booru. If its latest accepted snapshot is less
+than 20 hours old, the command exits as skipped before constructing an HTTP client or
+collection service. `--force` bypasses only this interval:
 
 ```bash
-pytest
+.venv/bin/python -m booruradar.collect safebooru --force
 ```
+
+Hard-invalid normalization and the historical anomaly policy still apply under
+`--force`. Safebooru remains manual in this slice: no scheduler or systemd unit/timer
+was added or changed. The worker continues to perform an empty scheduling cycle.
+
+## Historical analytics
+
+The stats CLI supports both targets and performs no HTTP requests or database writes:
+
+```bash
+.venv/bin/python -m booruradar.stats danbooru
+.venv/bin/python -m booruradar.stats safebooru
+```
+
+Growth uses the latest two accepted snapshots for the selected booru. Both
+`total_posts` envelopes must use the `posts` unit and matching provenance, and the
+timestamps must form a positive interval. Danbooru history is therefore normally an
+`estimated`/`estimated` pair, while Safebooru history is normally an
+`observed`/`observed` pair. Mixed provenance is reported as unavailable. Available
+growth is normalized to a 24-hour rate using the actual elapsed time.
+
+## Tests
+
+Run the default suite:
+
+```bash
+.venv/bin/python -m pytest
+```
+
+PostgreSQL integration tests are opt-in. They create and later delete only their own
+UUID-scoped rows, but must still run only against a migrated, disposable
+`booruradar_integration` database:
+
+```bash
+BOORURADAR_DATABASE_URL='postgresql+psycopg:///booruradar_integration' \
+BOORURADAR_RUN_POSTGRES_TESTS=1 \
+.venv/bin/python -m pytest tests/test_snapshot_collection_postgres.py -v
+```
+
+`BOORURADAR_RUN_POSTGRES_TESTS=1` is the guard that enables the module. Never point
+that command at `booruradar_history` or another database whose rows must be retained.
 
 Stop local PostgreSQL without deleting its named volume:
 
@@ -63,29 +130,16 @@ docker compose stop postgres
 ## Repository map
 
 ```text
-apps/api/              FastAPI entry point and routes
-apps/worker/           Background-process entry point
+apps/api/              FastAPI entry point, public routes, and dashboard assets
+apps/worker/           Empty background scheduling shell
 booruradar/core/       Environment, database session, enums, logging
-booruradar/adapters/   Metadata adapter contract, DTOs, registry, family namespaces
+booruradar/adapters/   Metadata adapter contract and family implementations
 booruradar/models/     SQLAlchemy tables and metric value objects
-booruradar/services/   Framework-independent collection orchestration
+booruradar/services/   Collection, quality, analytics, and catalog services
 migrations/            Alembic environment and revisions
-tests/                 Foundation tests
-docs/                  Architecture and data-model documentation
+tests/                 Unit, API, CLI, and opt-in PostgreSQL tests
+docs/                  Architecture, adapter, and data-model documentation
 ```
 
 See [the architecture](docs/ARCHITECTURE.md), [the data model](docs/DATA_MODEL.md),
-and [the adapter guide](docs/ADAPTERS.md) for the design boundaries.
-
-## Historical Analytics
-
-A read-only CLI is available to compute basic historical analytics:
-
-```bash
-BOORURADAR_DATABASE_URL='postgresql+psycopg:///booruradar_history' \
-.venv/bin/python -m booruradar.stats danbooru
-```
-
-The analytics service requires exactly two compatible accepted snapshots for a given booru. The target snapshots must share the `estimated` provenance and the `"posts"` unit.
-
-The CLI calculates the `POSTS_PER_DAY` growth normalized to exactly 24 hours, adjusting for the true real-world elapsed time between the two observations. No snapshots or network requests are created during this read-only query.
+and [the adapter guide](docs/ADAPTERS.md) for the detailed boundaries.

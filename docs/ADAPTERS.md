@@ -28,6 +28,27 @@ adapter should raise `UnsupportedCapabilityError`.
 An adapter must not download images or return direct media URLs; the project collects
 public metadata only.
 
+Raw response bodies are transient parser input. Adapters retain only bounded response
+evidence: endpoint identifier, HTTP status, truncated content type, and a SHA-256
+fingerprint. Payload text, file/CDN URLs, and media bytes are not persisted or emitted
+by the collection CLI.
+
+## Explicit collection targets and policies
+
+The manual CLI does not infer a family from an arbitrary URL. `CollectionTarget`
+binds a fixed key and canonical URL to an adapter type and a
+`SnapshotCollectionPolicy`; construction validates that their family and adapter
+names agree.
+
+| CLI target | Canonical URL | Adapter | Family | `total_posts` policy |
+| --- | --- | --- | --- | --- |
+| `danbooru` | `https://danbooru.donmai.us` | `DanbooruAdapter` | `danbooru` | `estimated`, `posts` |
+| `safebooru` | `https://safebooru.org` | `GelbooruAdapter` | `gelbooru` | `observed`, `posts` |
+
+The policy also owns the aggregate statistics source URL and chooses which previous
+metric envelope is compatible as an anomaly baseline. A previous value with a
+different provenance or unit is ignored instead of being compared.
+
 ## Modern Danbooru
 
 `DanbooruAdapter` supports the verified modern API shape using:
@@ -44,3 +65,26 @@ prevents an accidental full tag crawl.
 
 The adapter maps only post ID, creation time, raw rating, tag names, and the HTML post
 page URL. Media asset objects, direct file/CDN URLs, and image bytes are discarded.
+
+## Safebooru through the Gelbooru family
+
+`GelbooruAdapter` supports Safebooru's public DAPI XML shape using `GET /index.php`:
+
+- `page=dapi&s=post&q=index&limit=1` for detection, health, and the public
+  `total_posts` count;
+- `page=dapi&s=post&q=index&limit=<n>` for recent post metadata;
+- `page=dapi&s=tag&q=index&name=<tag>` for each explicitly requested tag.
+
+`total_posts` comes directly from the `<posts count="…">` attribute and is recorded
+with `observed` provenance. A successful HTTP status is not sufficient validation:
+the adapter also requires valid XML, the expected root element, a non-negative integer
+count, and required post attributes.
+
+The adapter maps post ID, rating, tag names, and an HTML post-page URL. Safebooru's
+`change` attribute is not treated as an upload timestamp, so `created_at` remains
+unknown. Any direct media attributes in the XML are discarded. Recent-post requests
+are capped at 1,000; tag requests are capped at 25 explicit names. When `tag_names`
+is `None`, no tag request is made.
+
+Safebooru collection is available only through the explicit manual target in this
+slice. No scheduler or systemd service/timer was added or changed.
