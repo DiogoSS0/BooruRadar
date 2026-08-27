@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="description" content="BooruRadar public metadata analytics dashboard">
+    <title>BooruRadar · Network analytics</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to dashboard</a>
+
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="BooruRadar dashboard home">
+        <span class="radar-mark" aria-hidden="true"><span></span></span>
+        <span class="brand-copy">
+          <strong>BooruRadar</strong>
+          <small>Public metadata intelligence</small>
+        </span>
+      </a>
+      <div class="masthead-actions">
+        <p class="system-state" id="system-state" role="status" aria-live="polite">
+          <span class="state-dot" aria-hidden="true"></span>
+          <span id="system-state-label">Connecting</span>
+        </p>
+        <button class="button button-quiet" id="refresh-button" type="button">
+          Refresh data
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Read-only network observatory</p>
+          <h1 id="hero-title">Discover what's happening across the booru ecosystem.</h1>
+          <p class="hero-summary">
+            One clear view of public post counts, collection history, and normalized
+            growth—without collecting media.
+          </p>
+        </div>
+        <div class="hero-signal" aria-label="Dashboard data status">
+          <span class="signal-label">Last synchronized</span>
+          <strong id="last-synchronized">Waiting for data</strong>
+          <span id="signal-detail">The dashboard reads the local BooruRadar API.</span>
+        </div>
+      </section>
+
+      <section class="overview" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Network pulse</p>
+            <h2 id="overview-title">Overview</h2>
+          </div>
+          <p>Latest accepted observations across enabled sources.</p>
+        </div>
+
+        <div class="metric-grid" id="overview-metrics" aria-busy="true">
+          <article class="metric-card">
+            <span class="metric-label">Monitored sources</span>
+            <strong class="metric-value" id="metric-sources">—</strong>
+            <span class="metric-note" id="metric-sources-note">Loading catalog</span>
+          </article>
+          <article class="metric-card metric-card-accent">
+            <span class="metric-label">Aggregate posts</span>
+            <strong class="metric-value" id="metric-posts">—</strong>
+            <span class="metric-note" id="metric-posts-note">From latest observations</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Reporting sources</span>
+            <strong class="metric-value" id="metric-reporting">—</strong>
+            <span class="metric-note">Sources with an accepted snapshot</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Latest capture</span>
+            <strong class="metric-value metric-value-time" id="metric-capture">—</strong>
+            <span class="metric-note" id="metric-capture-note">No observation loaded</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="catalog" aria-labelledby="catalog-title">
+        <div class="section-heading section-heading-actions">
+          <div>
+            <p class="eyebrow">Source catalog</p>
+            <h2 id="catalog-title">Tracked boorus</h2>
+          </div>
+          <p id="catalog-summary">Loading public metadata…</p>
+        </div>
+
+        <div class="notice notice-loading" id="catalog-loading" role="status">
+          <span class="loader" aria-hidden="true"></span>
+          <span>Reading the latest accepted observations.</span>
+        </div>
+        <div class="notice notice-error" id="catalog-error" role="alert" hidden>
+          <strong>Catalog unavailable</strong>
+          <span id="catalog-error-message">The API could not be reached.</span>
+          <button class="button button-quiet" id="catalog-retry" type="button">Try again</button>
+        </div>
+        <div class="notice" id="catalog-empty" role="status" hidden>
+          <strong>No monitored sources yet</strong>
+          <span>Once accepted observations exist, they will appear here automatically.</span>
+        </div>
+
+        <div class="booru-grid" id="booru-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="compare" aria-labelledby="compare-title">
+        <div class="compare-heading">
+          <div>
+            <p class="eyebrow">Side-by-side</p>
+            <h2 id="compare-title">Compare sources</h2>
+            <p>Select two to eight sources from the catalog to compare their latest signals.</p>
+          </div>
+          <div class="compare-action">
+            <span id="compare-selection" aria-live="polite">0 selected</span>
+            <button class="button button-primary" id="compare-button" type="button" disabled>
+              Build comparison
+            </button>
+          </div>
+        </div>
+
+        <div class="notice" id="compare-empty" role="status">
+          <strong>Your comparison is ready for a selection.</strong>
+          <span>Use the Compare checkboxes on any two source cards.</span>
+        </div>
+        <div class="notice notice-loading" id="compare-loading" role="status" hidden>
+          <span class="loader" aria-hidden="true"></span>
+          <span>Calculating compatible growth signals.</span>
+        </div>
+        <div class="notice notice-error" id="compare-error" role="alert" hidden>
+          <strong>Comparison unavailable</strong>
+          <span id="compare-error-message">The selected sources could not be compared.</span>
+        </div>
+
+        <div class="table-shell" id="compare-results" hidden>
+          <table>
+            <caption>Latest public metadata for the selected boorus</caption>
+            <thead>
+              <tr>
+                <th scope="col">Source</th>
+                <th scope="col">Total posts</th>
+                <th scope="col">Evidence</th>
+                <th scope="col">Daily pace</th>
+                <th scope="col">Net change</th>
+                <th scope="col">Latest capture</th>
+              </tr>
+            </thead>
+            <tbody id="compare-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="detail" id="detail-panel" aria-labelledby="detail-title" hidden>
+        <div class="detail-heading">
+          <button class="text-button" id="detail-close" type="button">← Back to catalog</button>
+          <p class="eyebrow">Source detail</p>
+          <div class="detail-title-row">
+            <div>
+              <h2 id="detail-title">Source</h2>
+              <p id="detail-family">Adapter family</p>
+            </div>
+            <a class="button button-quiet" id="detail-link" href="#" target="_blank" rel="noopener noreferrer" hidden>
+              Visit public site
+            </a>
+          </div>
+        </div>
+
+        <div class="notice notice-loading" id="detail-loading" role="status" hidden>
+          <span class="loader" aria-hidden="true"></span>
+          <span>Loading source history and growth.</span>
+        </div>
+        <div class="notice notice-error" id="detail-error" role="alert" hidden>
+          <strong>Source detail unavailable</strong>
+          <span id="detail-error-message">The API could not complete this view.</span>
+        </div>
+
+        <div id="detail-content" hidden>
+          <div class="detail-metrics">
+            <article class="metric-card metric-card-accent">
+              <span class="metric-label">Latest total</span>
+              <strong class="metric-value" id="detail-total">—</strong>
+              <span class="metric-note" id="detail-total-note">No accepted count</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Daily pace</span>
+              <strong class="metric-value" id="detail-pace">—</strong>
+              <span class="metric-note" id="detail-pace-note">Requires compatible history</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Net change</span>
+              <strong class="metric-value" id="detail-delta">—</strong>
+              <span class="metric-note" id="detail-delta-note">Between the latest pair</span>
+            </article>
+          </div>
+
+          <div class="history-heading">
+            <div>
+              <p class="eyebrow">Accepted observations</p>
+              <h3>Snapshot history</h3>
+            </div>
+            <span id="history-count">0 observations</span>
+          </div>
+          <div class="notice" id="history-empty" role="status" hidden>
+            <strong>No history available</strong>
+            <span>This source does not have an accepted snapshot yet.</span>
+          </div>
+          <div class="table-shell" id="history-results">
+            <table>
+              <caption id="history-caption">Accepted source observations, newest first</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Captured</th>
+                  <th scope="col">Total posts</th>
+                  <th scope="col">Evidence</th>
+                  <th scope="col">Observation ID</th>
+                </tr>
+              </thead>
+              <tbody id="history-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <noscript>
+        <div class="notice notice-error">
+          JavaScript is required to read the local analytics API and render this dashboard.
+        </div>
+      </noscript>
+    </main>
+
+    <footer>
+      <p><strong>BooruRadar</strong> monitors public aggregate metadata.</p>
+      <p>Read-only dashboard · Values retain their collection provenance.</p>
+    </footer>
+  </body>
+</html>

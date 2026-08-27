@@ -3,7 +3,7 @@ from __future__ import annotations
 import uvicorn
 from fastapi import FastAPI
 
-from apps.api.routes import health
+from apps.api.routes import boorus, dashboard, health
 from booruradar.core.config import Settings, get_settings
 from booruradar.core.logging import configure_logging
 
@@ -19,6 +19,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = resolved_settings
     application.include_router(health.router)
+    application.include_router(boorus.router)
+    application.include_router(dashboard.router)
     return application
 
 
