@@ -1,8 +1,8 @@
 # BooruRadar
 
-BooruRadar is a metadata-only monitoring service for public booru sites. The current
-product slice collects accepted history for two explicit targets, exposes a read-only
-catalog API, and serves a small dashboard over that API:
+BooruRadar is an open-source, metadata-only discovery platform for public booru
+communities. It collects accepted history for explicit targets, exposes a read-only
+catalog API, and serves a public homepage for exploring and comparing that data:
 
 - `danbooru` uses the modern Danbooru adapter and records `total_posts` as
   `estimated`;
@@ -60,7 +60,7 @@ While the API is running:
 - `GET /api/v1/compare?booru_id=<uuid>&booru_id=<uuid>` compares two to eight unique
   enabled boorus, keeping each booru's growth calculation isolated to its own history.
 
-The dashboard and catalog API are read-only projections. They expose normalized
+The discovery homepage and catalog API are read-only projections. They expose normalized
 aggregate metrics and provenance, never adapter response payloads or media data.
 
 ## Manual collection

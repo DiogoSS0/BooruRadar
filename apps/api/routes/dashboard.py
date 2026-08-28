@@ -16,7 +16,7 @@ SECURITY_HEADERS = {
         "script-src 'self'; "
         "style-src 'self'; "
         "connect-src 'self'; "
-        "img-src 'none'; "
+        "img-src 'self'; "
         "font-src 'none'; "
         "object-src 'none'; "
         "base-uri 'none'; "
@@ -34,6 +34,7 @@ SECURITY_HEADERS = {
 INDEX_DOCUMENT = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 STYLESHEET = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
 APPLICATION_SCRIPT = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+MASCOT_ASSET = (STATIC_DIR / "assets" / "booruradar-mascot.png").read_bytes()
 
 
 def _asset_response(content: str, media_type: str) -> Response:
@@ -55,6 +56,18 @@ async def stylesheet() -> Response:
 @router.get("/assets/app.js", include_in_schema=False)
 async def application_script() -> Response:
     return _asset_response(APPLICATION_SCRIPT, "text/javascript")
+
+
+@router.get("/assets/booruradar-mascot.png", include_in_schema=False)
+async def mascot_asset() -> Response:
+    return Response(
+        content=MASCOT_ASSET,
+        media_type="image/png",
+        headers={
+            **SECURITY_HEADERS,
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
 
 
 @router.get("/", include_in_schema=False, response_class=HTMLResponse)
