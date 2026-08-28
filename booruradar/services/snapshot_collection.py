@@ -9,7 +9,11 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from booruradar.adapters.base import AdapterResponseError, BooruAdapter
+from booruradar.adapters.base import (
+    AdapterResponseError,
+    BooruAdapter,
+    SourceAccessBlockedError,
+)
 from booruradar.adapters.danbooru import DanbooruAdapter
 from booruradar.core.enums import CrawlRunStatus
 from booruradar.models import Booru, BooruSnapshot, CrawlRun
@@ -37,7 +41,9 @@ def sanitize_exception_message(error: Exception) -> str:
     if not exception_name.isidentifier() or len(exception_name) > 100:
         exception_name = "Exception"
 
-    if isinstance(error, SuspiciousObservationError):
+    if isinstance(error, SourceAccessBlockedError):
+        category = "source access was blocked"
+    elif isinstance(error, SuspiciousObservationError):
         category = "candidate blocked by anomaly policy"
     elif isinstance(error, (HardInvalidObservationError, AdapterResponseError, ValidationError)):
         category = "response could not be normalized safely"
@@ -178,6 +184,8 @@ class SnapshotCollectionService:
 
     @staticmethod
     def _classify_failure(error: Exception) -> tuple[str, tuple[str, ...]]:
+        if isinstance(error, SourceAccessBlockedError):
+            return "collection_failed", ("source_access_blocked",)
         if isinstance(error, SuspiciousObservationError):
             return "suspicious", error.flags
         if isinstance(

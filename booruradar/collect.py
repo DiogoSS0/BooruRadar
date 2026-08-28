@@ -6,13 +6,14 @@ import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from booruradar import __version__
-from booruradar.core.config import get_settings
+from booruradar.core.config import Settings, get_settings
 from booruradar.models import Booru, BooruSnapshot
 from booruradar.services import (
     DanbooruSnapshotCollectionService,
@@ -23,6 +24,30 @@ from booruradar.targets import get_collection_target
 
 
 MINIMUM_COLLECTION_INTERVAL = timedelta(hours=20)
+
+
+def _collection_client_options(settings: Settings, target_key: str) -> dict[str, Any]:
+    user_agent = (
+        f"BooruRadar/{__version__} "
+        "(+https://github.com/DiogoSS0/BooruRadar)"
+    )
+    options: dict[str, Any] = {
+        "headers": {"User-Agent": user_agent},
+        "timeout": settings.http_timeout_seconds,
+    }
+    if target_key != "danbooru":
+        return options
+
+    login = settings.danbooru_login
+    api_key = settings.danbooru_api_key
+    if login is None or api_key is None:
+        return options
+    login_value = login.get_secret_value()
+    api_key_value = api_key.get_secret_value()
+    if not login_value.strip() or not api_key_value.strip():
+        return options
+    options["auth"] = httpx.BasicAuth(login_value, api_key_value)
+    return options
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -97,14 +122,8 @@ async def run_collection(argv: Sequence[str] | None = None) -> None:
                     print(f"LAST_SNAPSHOT_AT={captured_at.isoformat()}")
                     raise SystemExit(0)
 
-            user_agent = (
-                f"BooruRadar/{__version__} "
-                "(+https://github.com/DiogoSS0/BooruRadar)"
-            )
-            async with httpx.AsyncClient(
-                headers={"User-Agent": user_agent},
-                timeout=settings.http_timeout_seconds,
-            ) as client:
+            client_options = _collection_client_options(settings, target.key)
+            async with httpx.AsyncClient(**client_options) as client:
                 adapter = target.create_adapter(client)
                 if target.key == "danbooru":
                     service = DanbooruSnapshotCollectionService()

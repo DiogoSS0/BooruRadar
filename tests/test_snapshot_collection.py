@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from hashlib import sha256
 import json
+import logging
 from pathlib import Path
 from typing import Any
 import uuid
@@ -11,7 +14,10 @@ import uuid
 import httpx
 import pytest
 
-from booruradar.adapters.base import BooruAdapter
+from booruradar.adapters.base import (
+    BooruAdapter,
+    SourceAccessBlockedError,
+)
 from booruradar.adapters.danbooru import DanbooruAdapter, DanbooruResponseError
 from booruradar.adapters.gelbooru import GelbooruAdapter, GelbooruResponseError
 from booruradar.adapters.schemas import (
@@ -406,5 +412,94 @@ def test_failed_final_commit_rolls_back_reloads_and_marks_durable_run_failed() -
         assert session.commits == 3
         assert session.rollbacks == 1
         assert session.gets == 2
+
+    run(exercise())
+
+
+def test_cloudflare_challenge_fails_once_with_source_access_classification(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    async def exercise() -> None:
+        login = f"test-login-{uuid.uuid4().hex}"
+        api_key = f"test-key-{uuid.uuid4().hex}"
+        authorization = "Basic " + base64.b64encode(
+            f"{login}:{api_key}".encode()
+        ).decode()
+        marker = f"challenge-body-{uuid.uuid4().hex}"
+        challenge_body = (
+            f"<html><body>{marker} {login} {api_key} "
+            'file_url="https://cdn.example.invalid/private.jpg"</body></html>'
+        ).encode()
+        requested_paths: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested_paths.append(request.url.path)
+            assert request.headers["authorization"] == authorization
+            return httpx.Response(
+                403,
+                content=challenge_body,
+                headers={
+                    "server": "cloudflare",
+                    "cf-mitigated": "challenge",
+                    "content-type": "text/html; charset=utf-8",
+                },
+            )
+
+        session = FakeAsyncSession()
+        async with httpx.AsyncClient(
+            auth=httpx.BasicAuth(login, api_key),
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            with pytest.raises(SourceAccessBlockedError) as exc_info:
+                await DanbooruSnapshotCollectionService().collect(
+                    session,  # type: ignore[arg-type]
+                    booru(),
+                    DanbooruAdapter("https://danbooru.test", client),
+                )
+
+        assert requested_paths == ["/posts.json"]
+        assert not any(isinstance(item, BooruSnapshot) for item in session.objects)
+        crawl_run = next(item for item in session.objects if isinstance(item, CrawlRun))
+        assert crawl_run.status is CrawlRunStatus.FAILED
+        assert crawl_run.error_message == (
+            "SourceAccessBlockedError: source access was blocked"
+        )
+        assert crawl_run.details["quality_status"] == "collection_failed"
+        assert crawl_run.details["quality_flags"] == ["source_access_blocked"]
+        assert crawl_run.details["source_endpoints"] == ["recent_posts"]
+        assert crawl_run.details["responses"] == [
+            {
+                "endpoint_identifier": "recent_posts",
+                "http_status": 403,
+                "content_type": "text/html; charset=utf-8",
+                "response_sha256": sha256(challenge_body).hexdigest(),
+            }
+        ]
+        persisted = json.dumps(
+            {
+                "details": crawl_run.details,
+                "error_message": crawl_run.error_message,
+            }
+        )
+        exception_text = str(exc_info.value) + repr(exc_info.value)
+        for forbidden in (
+            marker,
+            login,
+            api_key,
+            authorization,
+            "file_url",
+            "cdn.example.invalid",
+            "<html",
+        ):
+            assert forbidden not in persisted
+            assert forbidden not in exception_text
+            assert forbidden not in caplog.text
+        assert exc_info.value.__context__ is None
+        assert exc_info.value.__cause__ is None
+        assert session.commits == 2
+        assert session.rollbacks == 1
+        assert session.gets == 1
 
     run(exercise())

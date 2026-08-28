@@ -1,3 +1,4 @@
+import base64
 import asyncio
 import sys
 import uuid
@@ -6,8 +7,14 @@ from io import StringIO
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import httpx
 
-from booruradar.collect import run_collection
+from booruradar.adapters import SourceAccessBlockedError
+from booruradar.collect import (
+    _collection_client_options,
+    run_collection,
+)
+from booruradar.core.config import Settings
 from booruradar.models import Booru, BooruSnapshot
 from booruradar.core.enums import CrawlRunStatus
 from booruradar.services.snapshot_collection import SnapshotCollectionResult
@@ -244,3 +251,109 @@ def test_output_contains_no_raw_media_data():
         output = mock_stdout.getvalue()
         assert "cdn.donmai.us" not in output
         assert "file_url" not in output
+
+
+@pytest.mark.parametrize(
+    ("login", "api_key"),
+    [
+        (None, None),
+        ("login-only", None),
+        (None, "key-only"),
+        ("   ", "key"),
+        ("login", "   "),
+    ],
+)
+def test_danbooru_auth_is_disabled_without_two_nonempty_values(
+    login: str | None,
+    api_key: str | None,
+) -> None:
+    settings = Settings(
+        danbooru_login=login,
+        danbooru_api_key=api_key,
+        _env_file=None,
+    )
+
+    options = _collection_client_options(settings, "danbooru")
+
+    assert "auth" not in options
+
+
+def test_complete_danbooru_credentials_configure_http_basic_auth() -> None:
+    login = f"test-login-{uuid.uuid4().hex}"
+    api_key = f"test-key-{uuid.uuid4().hex}"
+    settings = Settings(
+        danbooru_login=login,
+        danbooru_api_key=api_key,
+        _env_file=None,
+    )
+
+    options = _collection_client_options(settings, "danbooru")
+    auth = options["auth"]
+
+    assert isinstance(auth, httpx.BasicAuth)
+    request = httpx.Request("GET", "https://danbooru.test/posts.json?limit=1")
+    authenticated_request = next(auth.auth_flow(request))
+    scheme, token = authenticated_request.headers["authorization"].split(" ", 1)
+    decoded_credentials = base64.b64decode(token).decode("utf-8")
+    assert scheme == "Basic"
+    assert decoded_credentials == f"{login}:{api_key}"
+    assert login not in str(authenticated_request.url)
+    assert api_key not in str(authenticated_request.url)
+    assert login not in repr(auth)
+    assert api_key not in repr(auth)
+    assert login not in repr(options)
+    assert api_key not in repr(options)
+
+
+def test_safebooru_client_options_ignore_danbooru_credentials() -> None:
+    login = f"test-login-{uuid.uuid4().hex}"
+    api_key = f"test-key-{uuid.uuid4().hex}"
+    settings = Settings(
+        danbooru_login=login,
+        danbooru_api_key=api_key,
+        _env_file=None,
+    )
+
+    options = _collection_client_options(settings, "safebooru")
+
+    assert "auth" not in options
+    assert login not in repr(options)
+    assert api_key not in repr(options)
+
+
+def test_blocked_source_cli_output_never_contains_danbooru_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    login = f"test-login-{uuid.uuid4().hex}"
+    api_key = f"test-key-{uuid.uuid4().hex}"
+    settings = Settings(
+        danbooru_login=login,
+        danbooru_api_key=api_key,
+        _env_file=None,
+    )
+    session = FakeSessionContextManager(booru=make_booru(), latest_snapshot=None)
+
+    with (
+        patch("booruradar.collect.get_settings", return_value=settings),
+        patch("booruradar.collect.AsyncSession", return_value=session),
+        patch("booruradar.collect.create_async_engine", return_value=FakeEngine()),
+        patch("booruradar.collect.httpx.AsyncClient") as client_class,
+        patch(
+            "booruradar.collect.DanbooruSnapshotCollectionService.collect",
+            new_callable=AsyncMock,
+        ) as collect,
+        patch("sys.stdout", new_callable=StringIO) as stdout,
+        patch("sys.stderr", new_callable=StringIO) as stderr,
+    ):
+        client_class.return_value.__aenter__.return_value = object()
+        collect.side_effect = SourceAccessBlockedError("source access was blocked")
+
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(run_collection(["danbooru"]))
+
+    assert exc_info.value.code == 1
+    assert isinstance(client_class.call_args.kwargs["auth"], httpx.BasicAuth)
+    output = stdout.getvalue() + stderr.getvalue() + caplog.text
+    assert "ERROR=SourceAccessBlockedError: source access was blocked" in output
+    assert login not in output
+    assert api_key not in output

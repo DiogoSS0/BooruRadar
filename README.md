@@ -72,6 +72,16 @@ Use the configured application database and invoke either target explicitly:
 .venv/bin/python -m booruradar.collect safebooru
 ```
 
+Danbooru can optionally use its official HTTP Basic Auth credentials from
+`DANBOORU_LOGIN` and `DANBOORU_API_KEY`. Authentication is enabled only when both
+values are present and non-blank; partial configuration remains unauthenticated.
+Credentials are sent in the authorization header, never in endpoint URLs.
+
+Danbooru responses with HTTP 403 or `cf-mitigated: challenge` fail the single
+collection attempt as `source_access_blocked`. BooruRadar does not retry or attempt
+to bypass the challenge, and stores only response evidence (endpoint, status,
+content type, and SHA-256), not the HTML response body.
+
 Collection is scoped by the selected booru. If its latest accepted snapshot is less
 than 20 hours old, the command exits as skipped before constructing an HTTP client or
 collection service. `--force` bypasses only this interval:

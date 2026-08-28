@@ -22,8 +22,20 @@ class UnsupportedCapabilityError(RuntimeError):
     """Raised when a caller requests a capability the site cannot provide."""
 
 
+class AdapterRequestError(httpx.HTTPError):
+    """Request failure stripped of request headers and remote response content."""
+
+    def __init__(self, *, status_code: int | None = None) -> None:
+        self.status_code = status_code
+        super().__init__("adapter HTTP request failed")
+
+
 class AdapterResponseError(ValueError):
     """Raised when an adapter response cannot be normalized safely."""
+
+
+class SourceAccessBlockedError(RuntimeError):
+    """Raised when a source denies metadata access before normalization."""
 
 
 class BooruAdapter(ABC):

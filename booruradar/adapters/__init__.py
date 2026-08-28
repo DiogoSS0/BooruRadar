@@ -1,8 +1,10 @@
 """Public adapter API."""
 
 from booruradar.adapters.base import (
+    AdapterRequestError,
     AdapterResponseError,
     BooruAdapter,
+    SourceAccessBlockedError,
     UnsupportedCapabilityError,
 )
 from booruradar.adapters.danbooru import DanbooruAdapter
@@ -21,6 +23,7 @@ from booruradar.adapters.schemas import (
 
 __all__ = [
     "AdapterCapability",
+    "AdapterRequestError",
     "AdapterResponseError",
     "AdapterRegistry",
     "BooruAdapter",
@@ -32,6 +35,7 @@ __all__ = [
     "RecentPostMetadata",
     "ResponseEvidence",
     "SiteDetection",
+    "SourceAccessBlockedError",
     "TagStatistic",
     "UnsupportedCapabilityError",
     "registry",

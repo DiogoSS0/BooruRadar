@@ -66,6 +66,15 @@ prevents an accidental full tag crawl.
 The adapter maps only post ID, creation time, raw rating, tag names, and the HTML post
 page URL. Media asset objects, direct file/CDN URLs, and image bytes are discarded.
 
+Optional official Danbooru HTTP Basic Auth is configured with `DANBOORU_LOGIN` and
+`DANBOORU_API_KEY`. Both non-blank values are required; otherwise requests remain
+unauthenticated. Credentials are never placed in URLs or collection evidence.
+
+HTTP 403 responses and responses marked `cf-mitigated: challenge` are classified as
+`source_access_blocked`. They are not parsed as API data or retried. The collector
+retains the endpoint identifier, HTTP status, content type, and response SHA-256,
+while discarding the challenge body.
+
 ## Safebooru through the Gelbooru family
 
 `GelbooruAdapter` supports Safebooru's public DAPI XML shape using `GET /index.php`:

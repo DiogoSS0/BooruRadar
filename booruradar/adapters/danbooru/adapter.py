@@ -9,7 +9,12 @@ import httpx
 from pydantic import ValidationError
 
 from booruradar import __version__
-from booruradar.adapters.base import AdapterResponseError, BooruAdapter
+from booruradar.adapters.base import (
+    AdapterRequestError,
+    AdapterResponseError,
+    BooruAdapter,
+    SourceAccessBlockedError,
+)
 from booruradar.adapters.evidence import ResponseEvidence, fingerprint_response
 from booruradar.adapters.schemas import (
     AdapterCapability,
@@ -51,6 +56,8 @@ class DanbooruAdapter(BooruAdapter):
     async def detect(cls, base_url: str, client: httpx.AsyncClient) -> SiteDetection:
         try:
             response = await client.get(f"{base_url.rstrip('/')}/posts.json", params={"limit": 1})
+            if cls._is_source_access_blocked(response):
+                return cls._detection_result(False, "source access was blocked")
             if not response.is_success:
                 return cls._detection_result(False, "posts.json returned a non-success status")
             payload = response.json()
@@ -68,6 +75,12 @@ class DanbooruAdapter(BooruAdapter):
             payload = await self._get_json("recent_posts", "/posts.json", params={"limit": 1})
             if not self._has_modern_post_shape(payload):
                 raise DanbooruResponseError("recent_posts did not match the modern post shape")
+        except AdapterRequestError as error:
+            if error.status_code is None:
+                status = "invalid_response"
+            else:
+                status = f"http_{error.status_code}"
+            healthy = False
         except httpx.HTTPStatusError as error:
             status = f"http_{error.response.status_code}"
             healthy = False
@@ -215,13 +228,65 @@ class DanbooruAdapter(BooruAdapter):
         *,
         params: Mapping[str, str | int] | None = None,
     ) -> Any:
-        response = await self.client.get(f"{self.base_url}{path}", params=params)
+        response: httpx.Response | None = None
+        authenticated_client = self.client.auth is not None
+        authenticated_transport_failure = False
+        try:
+            response = await self.client.get(f"{self.base_url}{path}", params=params)
+        except httpx.HTTPError as error:
+            if (
+                not authenticated_client
+                and not self._http_error_has_authorization(error)
+            ):
+                raise
+            authenticated_transport_failure = True
+        if authenticated_transport_failure or response is None:
+            raise AdapterRequestError()
+
         self._request_evidence.append(fingerprint_response(response, endpoint_identifier))
-        response.raise_for_status()
+        if self._is_source_access_blocked(response):
+            raise SourceAccessBlockedError("source access was blocked")
+        authenticated_response = (
+            authenticated_client or self._response_has_authorization(response)
+        )
+        if not response.is_success:
+            if authenticated_response:
+                raise AdapterRequestError(status_code=response.status_code)
+            response.raise_for_status()
+
         try:
             return response.json()
         except ValueError as error:
-            raise DanbooruResponseError(f"{endpoint_identifier} response was not valid JSON") from error
+            if not authenticated_response:
+                raise DanbooruResponseError(
+                    f"{endpoint_identifier} response was not valid JSON"
+                ) from error
+        raise DanbooruResponseError(
+            f"{endpoint_identifier} response was not valid JSON"
+        )
+
+    @staticmethod
+    def _http_error_has_authorization(error: httpx.HTTPError) -> bool:
+        try:
+            request = error.request
+        except RuntimeError:
+            return False
+        return "authorization" in request.headers
+
+    @staticmethod
+    def _response_has_authorization(response: httpx.Response) -> bool:
+        try:
+            request = response.request
+        except RuntimeError:
+            return False
+        return "authorization" in request.headers
+
+    @staticmethod
+    def _is_source_access_blocked(response: httpx.Response) -> bool:
+        mitigation = response.headers.get("cf-mitigated")
+        return response.status_code == 403 or (
+            mitigation is not None and mitigation.strip().casefold() == "challenge"
+        )
 
     @classmethod
     def _detection_result(cls, detected: bool, evidence: str) -> SiteDetection:
