@@ -18,12 +18,17 @@ const elements = {
   primaryNav: document.querySelector("#primary-nav"),
   catalogConnection: document.querySelector("#catalog-connection"),
   catalogConnectionLabel: document.querySelector("#catalog-connection-label"),
+  heroSourceCount: document.querySelector("#hero-source-count"),
   catalogSignals: document.querySelector("#catalog-signals"),
   signalTracked: document.querySelector("#signal-tracked"),
   signalTrackedNote: document.querySelector("#signal-tracked-note"),
   signalReporting: document.querySelector("#signal-reporting"),
   signalLatest: document.querySelector("#signal-latest"),
   signalLatestNote: document.querySelector("#signal-latest-note"),
+  analyticsTracked: document.querySelector("#analytics-tracked"),
+  analyticsReporting: document.querySelector("#analytics-reporting"),
+  analyticsLatest: document.querySelector("#analytics-latest"),
+  analyticsLatestNote: document.querySelector("#analytics-latest-note"),
   historyStatusTitle: document.querySelector("#history-status-title"),
   historyStatusCopy: document.querySelector("#history-status-copy"),
   catalogLoading: document.querySelector("#catalog-loading"),
@@ -276,15 +281,22 @@ function updateSignals(boorus) {
 
   elements.signalTracked.textContent = formatNumber(boorus.length);
   elements.signalTrackedNote.textContent = boorus.length === 1 ? "Enabled source" : "Enabled sources";
+  elements.heroSourceCount.textContent = `${formatNumber(boorus.length)} monitored ${boorus.length === 1 ? "source" : "sources"}`;
+  elements.analyticsTracked.textContent = formatNumber(boorus.length);
   elements.signalReporting.textContent = formatNumber(snapshots.length);
+  elements.analyticsReporting.textContent = formatNumber(snapshots.length);
 
   if (latestDates.length) {
     const latest = latestDates[0];
     elements.signalLatest.textContent = relativeDate(latest.toISOString());
     elements.signalLatestNote.textContent = formatDate(latest.toISOString());
+    elements.analyticsLatest.textContent = relativeDate(latest.toISOString());
+    elements.analyticsLatestNote.textContent = formatDate(latest.toISOString());
   } else {
     elements.signalLatest.textContent = "—";
     elements.signalLatestNote.textContent = "No accepted observation yet";
+    elements.analyticsLatest.textContent = "—";
+    elements.analyticsLatestNote.textContent = "No accepted observation yet";
   }
 
   if (snapshots.length) {
@@ -387,8 +399,24 @@ function createBooruCard(booru) {
   return card;
 }
 
+function createCoveragePreview() {
+  const preview = createElement("aside", "coverage-preview");
+  preview.append(
+    createElement("span", "coverage-radar"),
+    createElement("strong", null, "Coverage grows here"),
+    createElement(
+      "p",
+      null,
+      "New supported sources will appear as real catalog entries, never as placeholder rankings.",
+    ),
+  );
+  return preview;
+}
+
 function renderCatalog(boorus) {
-  elements.booruGrid.replaceChildren(...boorus.map(createBooruCard));
+  const cards = boorus.map(createBooruCard);
+  cards.push(createCoveragePreview());
+  elements.booruGrid.replaceChildren(...cards);
   updateComparisonSelection();
 }
 
@@ -437,6 +465,10 @@ async function loadCatalog() {
     setCatalogMode("error", message);
     setConnectionState("error", "Public API unavailable");
     elements.catalogSignals.setAttribute("aria-busy", "false");
+    elements.heroSourceCount.textContent = "Catalog unavailable";
+    elements.analyticsTracked.textContent = "—";
+    elements.analyticsReporting.textContent = "—";
+    elements.analyticsLatest.textContent = "—";
     elements.historyStatusTitle.textContent = "Live history unavailable";
     elements.historyStatusCopy.textContent = "Static product information remains available while the catalog connection recovers.";
   }
