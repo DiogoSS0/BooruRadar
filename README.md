@@ -2,6 +2,8 @@
 
 **Live demo:** https://web-production-58150.up.railway.app
 
+**Status:** Public alpha
+
 BooruRadar is an open-source, metadata-only discovery platform for public booru
 communities. It collects accepted history for explicit targets, exposes a read-only
 catalog API, and serves a public homepage for exploring and comparing that data:
