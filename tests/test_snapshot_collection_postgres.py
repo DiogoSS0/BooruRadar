@@ -25,6 +25,7 @@ from booruradar.models import Booru, BooruSnapshot, CrawlRun
 from booruradar.services import (
     DanbooruSnapshotCollectionService,
     GELBOORU_SNAPSHOT_POLICY,
+    collection_lock,
     HardInvalidObservationError,
     SnapshotCollectionService,
     SuspiciousObservationError,
@@ -664,5 +665,23 @@ def test_gelbooru_snapshot_commit_failure_rolls_back_atomic_state_with_evidence(
             assert failed_run.details["quality_flags"] == ["unexpected_error"]
             _assert_safe_response_evidence(failed_run.details)
             assert snapshots == []
+
+    run(exercise())
+
+
+def test_target_scoped_advisory_lock_excludes_only_the_same_target() -> None:
+    async def exercise() -> None:
+        async with postgres_test_database() as database:
+            async with collection_lock(database.engine, "danbooru") as first:
+                assert first is True
+
+                async with collection_lock(database.engine, "danbooru") as second:
+                    assert second is False
+
+                async with collection_lock(database.engine, "safebooru") as other:
+                    assert other is True
+
+            async with collection_lock(database.engine, "danbooru") as reacquired:
+                assert reacquired is True
 
     run(exercise())

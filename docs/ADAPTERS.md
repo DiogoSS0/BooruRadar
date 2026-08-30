@@ -95,5 +95,6 @@ unknown. Any direct media attributes in the XML are discarded. Recent-post reque
 are capped at 1,000; tag requests are capped at 25 explicit names. When `tag_names`
 is `None`, no tag request is made.
 
-Safebooru collection is available only through the explicit manual target in this
-slice. No scheduler or systemd service/timer was added or changed.
+Safebooru collection remains available only through the explicit manual target.
+Any production automation is restricted to `python -m booruradar.collect danbooru`;
+there is no Safebooru cron, generic target fan-out, or systemd timer.

@@ -23,6 +23,24 @@ def test_settings_reject_unknown_log_level() -> None:
         Settings(log_level="verbose", _env_file=None)
 
 
+@pytest.mark.parametrize(
+    ("configured", "normalized"),
+    [
+        ("postgres://user:pass@db/app", "postgresql+psycopg://user:pass@db/app"),
+        ("postgresql://user:pass@db/app", "postgresql+psycopg://user:pass@db/app"),
+        (
+            "postgresql+psycopg://user:pass@db/app",
+            "postgresql+psycopg://user:pass@db/app",
+        ),
+    ],
+)
+def test_settings_normalize_provider_postgresql_urls(
+    configured: str,
+    normalized: str,
+) -> None:
+    assert Settings(database_url=configured, _env_file=None).database_url == normalized
+
+
 def test_danbooru_credentials_use_exact_environment_names_and_mask_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,17 @@ from booruradar.services.quality import (
 )
 from booruradar.services.snapshot_collection import SnapshotCollectionResult
 from booruradar.targets import get_collection_target
+
+
+@asynccontextmanager
+async def _acquired_collection_lock(_engine, _target_key):
+    yield True
+
+
+@pytest.fixture(autouse=True)
+def acquire_collection_lock_for_cli_unit_tests():
+    with patch("booruradar.collect.collection_lock", _acquired_collection_lock):
+        yield
 
 
 SAFEBOORU_URL = "https://safebooru.org"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -94,7 +95,11 @@ class SnapshotCollectionService:
             details=self._evidence_details(adapter, quality_status="pending"),
         )
         session.add(crawl_run)
-        await session.commit()
+        try:
+            await session.commit()
+        except BaseException:
+            await session.rollback()
+            raise
 
         try:
             inspection = await self.inspection_service.inspect(
@@ -146,6 +151,33 @@ class SnapshotCollectionService:
             session.add(snapshot)
             await session.commit()
             return SnapshotCollectionResult(crawl_run=current_run, snapshot=snapshot)
+        except asyncio.CancelledError:
+            await session.rollback()
+            persisted_snapshot_id = await session.scalar(
+                select(BooruSnapshot.id)
+                .where(BooruSnapshot.crawl_run_id == crawl_run_id)
+                .limit(1)
+            )
+            if persisted_snapshot_id is not None:
+                # Snapshot and SUCCEEDED status share one atomic commit.
+                raise
+            cancelled_run = await session.get(CrawlRun, crawl_run_id)
+            if cancelled_run is None:
+                raise
+            cancelled_run.status = CrawlRunStatus.CANCELLED
+            cancelled_run.finished_at = datetime.now(UTC)
+            cancelled_run.error_message = "CancelledError: collection cancelled"
+            cancelled_run.details = self._evidence_details(
+                adapter,
+                quality_status="collection_cancelled",
+                quality_flags=("cancelled",),
+            )
+            try:
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
+            raise
         except Exception as error:
             await session.rollback()
             failed_run = await session.get(CrawlRun, crawl_run_id)
@@ -160,7 +192,11 @@ class SnapshotCollectionService:
                 quality_status=quality_status,
                 quality_flags=quality_flags,
             )
-            await session.commit()
+            try:
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
             raise
 
     @staticmethod

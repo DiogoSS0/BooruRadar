@@ -78,6 +78,45 @@ class FakeAsyncSession:
         return self.previous_metrics
 
 
+class InitialCommitFailureSession(FakeAsyncSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.needs_rollback = False
+
+    async def commit(self) -> None:
+        self.commits += 1
+        self.needs_rollback = True
+        raise RuntimeError("password=unsafe-initial-commit")
+
+    async def rollback(self) -> None:
+        await super().rollback()
+        self.needs_rollback = False
+
+    async def scalar(self, statement: object) -> dict[str, object] | None:
+        assert self.needs_rollback is False
+        return await super().scalar(statement)
+
+
+class TerminalStatusCommitFailureSession(FakeAsyncSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.needs_rollback = False
+
+    async def commit(self) -> None:
+        self.commits += 1
+        if self.commits == 2:
+            self.needs_rollback = True
+            raise RuntimeError("password=unsafe-terminal-commit")
+
+    async def rollback(self) -> None:
+        await super().rollback()
+        self.needs_rollback = False
+
+    async def scalar(self, statement: object) -> dict[str, object] | None:
+        assert self.needs_rollback is False
+        return await super().scalar(statement)
+
+
 class FinalCommitFailureSession(FakeAsyncSession):
     async def commit(self) -> None:
         self.commits += 1
@@ -93,6 +132,28 @@ class FinalCommitFailureSession(FakeAsyncSession):
         crawl_run.status = CrawlRunStatus.RUNNING
         crawl_run.finished_at = None
         crawl_run.error_message = None
+
+
+class AmbiguousFinalCommitCancellationSession(FakeAsyncSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.final_commit_accepted = False
+
+    async def commit(self) -> None:
+        self.commits += 1
+        if self.commits == 2:
+            self.final_commit_accepted = True
+            raise asyncio.CancelledError
+
+    async def scalar(self, statement: object) -> object | None:
+        rendered = str(statement)
+        if self.final_commit_accepted and "booru_snapshots.id" in rendered:
+            return next(
+                item.id
+                for item in self.objects
+                if isinstance(item, BooruSnapshot)
+            )
+        return await super().scalar(statement)
 
 
 class InvalidNormalizedInspectionService(BooruInspectionService):
@@ -412,6 +473,98 @@ def test_failed_final_commit_rolls_back_reloads_and_marks_durable_run_failed() -
         assert session.commits == 3
         assert session.rollbacks == 1
         assert session.gets == 2
+
+    run(exercise())
+
+
+def test_cancelled_collection_persists_terminal_run_without_snapshot() -> None:
+    class CancelledInspectionService(BooruInspectionService):
+        async def inspect(self, *_args: object, **_kwargs: object) -> InspectionResult:
+            raise asyncio.CancelledError
+
+    async def exercise() -> None:
+        session = FakeAsyncSession()
+        service = DanbooruSnapshotCollectionService(
+            inspection_service=CancelledInspectionService()
+        )
+        async with httpx.AsyncClient(transport=transport_for_count(12_022_661)) as client:
+            with pytest.raises(asyncio.CancelledError):
+                await service.collect(
+                    session,  # type: ignore[arg-type]
+                    booru(),
+                    DanbooruAdapter("https://danbooru.test", client),
+                )
+
+        crawl_run = next(item for item in session.objects if isinstance(item, CrawlRun))
+        assert crawl_run.status is CrawlRunStatus.CANCELLED
+        assert crawl_run.details["quality_status"] == "collection_cancelled"
+        assert crawl_run.details["quality_flags"] == ["cancelled"]
+        assert not any(isinstance(item, BooruSnapshot) for item in session.objects)
+        assert session.commits == 2
+        assert session.rollbacks == 1
+
+    run(exercise())
+
+
+def test_cancel_after_accepted_final_commit_preserves_succeeded_snapshot() -> None:
+    async def exercise() -> None:
+        session = AmbiguousFinalCommitCancellationSession()
+        async with httpx.AsyncClient(transport=transport_for_count(12_022_661)) as client:
+            with pytest.raises(asyncio.CancelledError):
+                await DanbooruSnapshotCollectionService().collect(
+                    session,  # type: ignore[arg-type]
+                    booru(),
+                    DanbooruAdapter("https://danbooru.test", client),
+                )
+
+        crawl_run = next(item for item in session.objects if isinstance(item, CrawlRun))
+        snapshots = [
+            item for item in session.objects if isinstance(item, BooruSnapshot)
+        ]
+        assert crawl_run.status is CrawlRunStatus.SUCCEEDED
+        assert crawl_run.details["quality_status"] == "accepted"
+        assert len(snapshots) == 1
+        assert snapshots[0].crawl_run_id == crawl_run.id
+        assert session.commits == 2
+        assert session.rollbacks == 1
+
+    run(exercise())
+
+
+def test_failed_initial_run_commit_rolls_back_and_leaves_session_usable() -> None:
+    async def exercise() -> None:
+        session = InitialCommitFailureSession()
+        async with httpx.AsyncClient(transport=transport_for_count(12_022_661)) as client:
+            with pytest.raises(RuntimeError, match="unsafe-initial-commit"):
+                await DanbooruSnapshotCollectionService().collect(
+                    session,  # type: ignore[arg-type]
+                    booru(),
+                    DanbooruAdapter("https://danbooru.test", client),
+                )
+
+        assert session.commits == 1
+        assert session.rollbacks == 1
+        assert not any(isinstance(item, BooruSnapshot) for item in session.objects)
+        await session.scalar(object())
+
+    run(exercise())
+
+
+def test_failed_terminal_status_commit_rolls_back_and_leaves_session_usable() -> None:
+    async def exercise() -> None:
+        session = TerminalStatusCommitFailureSession()
+        async with httpx.AsyncClient(transport=transport_for_count(-1)) as client:
+            with pytest.raises(RuntimeError, match="unsafe-terminal-commit"):
+                await DanbooruSnapshotCollectionService().collect(
+                    session,  # type: ignore[arg-type]
+                    booru(),
+                    DanbooruAdapter("https://danbooru.test", client),
+                )
+
+        assert session.commits == 2
+        assert session.rollbacks == 2
+        assert not any(isinstance(item, BooruSnapshot) for item in session.objects)
+        await session.scalar(object())
 
     run(exercise())
 

@@ -4,7 +4,7 @@
 
 **Status:** Public alpha
 
-**Deployment target:** Railway (\`main\` branch)
+**Deployment target:** Railway (`main` branch)
 
 BooruRadar is an open-source, metadata-only discovery platform for public booru
 communities. It collects accepted history for explicit targets, exposes a read-only
@@ -93,12 +93,17 @@ than 20 hours old, the command exits as skipped before constructing an HTTP clie
 collection service. `--force` bypasses only this interval:
 
 ```bash
-.venv/bin/python -m booruradar.collect safebooru --force
+.venv/bin/python -m booruradar.collect danbooru --force
 ```
 
 Hard-invalid normalization and the historical anomaly policy still apply under
-`--force`. Safebooru remains manual in this slice: no scheduler or systemd unit/timer
-was added or changed. The worker continues to perform an empty scheduling cycle.
+`--force`. Any production automation is restricted to the explicit `danbooru` target
+as a one-shot Railway process. Safebooru remains manual: no production cron or generic
+multi-target schedule includes it. The polling worker remains an unused compatibility
+shell.
+
+See [the production collection runbook](docs/production-collection.md) for Railway
+configuration, result interpretation, database verification, scheduling, and recovery.
 
 ## Historical analytics
 
@@ -147,7 +152,7 @@ docker compose stop postgres
 
 ```text
 apps/api/              FastAPI entry point, public routes, and dashboard assets
-apps/worker/           Empty background scheduling shell
+apps/worker/           Unused compatibility shell; production uses the one-shot CLI
 booruradar/core/       Environment, database session, enums, logging
 booruradar/adapters/   Metadata adapter contract and family implementations
 booruradar/models/     SQLAlchemy tables and metric value objects
@@ -158,4 +163,6 @@ docs/                  Architecture, adapter, and data-model documentation
 ```
 
 See [the architecture](docs/ARCHITECTURE.md), [the data model](docs/DATA_MODEL.md),
-and [the adapter guide](docs/ADAPTERS.md) for the detailed boundaries.
+[the adapter guide](docs/ADAPTERS.md),
+[the production collection runbook](docs/production-collection.md), and
+[the ranking-readiness plan](docs/ranking-readiness.md) for detailed boundaries.

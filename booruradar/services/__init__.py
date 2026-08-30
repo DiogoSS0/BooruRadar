@@ -1,5 +1,6 @@
 """Application services independent of transport and persistence frameworks."""
 
+from booruradar.services.collection_lock import collection_lock, collection_lock_key
 from booruradar.services.inspection import BooruInspectionService, InspectionResult
 from booruradar.services.quality import (
     DANBOORU_SNAPSHOT_POLICY,
@@ -23,6 +24,8 @@ __all__ = [
     "DanbooruSnapshotCollectionService",
     "GELBOORU_SNAPSHOT_POLICY",
     "HardInvalidObservationError",
+    "collection_lock",
+    "collection_lock_key",
     "InspectionResult",
     "SnapshotCandidate",
     "SnapshotCollectionPolicy",

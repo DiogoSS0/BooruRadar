@@ -3,8 +3,9 @@
 ## Scope
 
 BooruRadar is a metadata-only monitoring application. The current slice supports
-manual collection from Danbooru and Safebooru, accepted snapshot history, compatible
-growth analytics, a read-only public catalog API, and a dashboard served by that API.
+a production-ready one-shot Danbooru collector, explicit manual Safebooru collection,
+accepted snapshot history, compatible growth analytics, a read-only public catalog
+API, and a dashboard served by that API.
 
 The system stores normalized aggregate metadata and bounded response evidence. It
 does not download or persist image/video bytes, direct media URLs, or raw response
@@ -14,9 +15,10 @@ bodies.
 
 ```text
 browser dashboard ──> apps/api routes ──> catalog service ──> models
-manual collect CLI ──> target registry ──> collection service ──> adapters
+Railway cron (when enabled) ──> collect CLI ──> collection service ──> adapters
+manual collect CLI ───────────> target registry ──> collection service ──> adapters
 manual stats CLI ────────────────────────> analytics service ──> models
-apps/worker ─────────────────────────────> empty scheduling shell
+apps/worker ─────────────────────────────> unused compatibility shell
 
 core <── shared configuration, persistence setup, enums, and logging
 ```
@@ -50,16 +52,23 @@ within each selected booru; it never treats two different boorus as a historical
 pair. Malformed or incompatible snapshot metrics are projected as absent or
 unavailable rather than passed through as raw data.
 
-### Manual CLIs and worker
+### Collection processes, manual CLIs, and worker
 
 `python -m booruradar.collect danbooru` and
-`python -m booruradar.collect safebooru` are the collection entry points.
-`python -m booruradar.stats danbooru` and
+`python -m booruradar.collect safebooru` are explicit one-shot collection entry
+points. `python -m booruradar.stats danbooru` and
 `python -m booruradar.stats safebooru` are read-only analytics entry points.
 
-`apps.worker.main` remains an empty polling shell. Safebooru is not scheduled, and
-this slice adds or changes no systemd service or timer. Collection is manual unless
-an operator invokes the CLI externally.
+Production uses a dedicated `collector-danbooru` Railway service. The web and
+collector processes share the same PostgreSQL history database but have separate
+lifecycles. The collector has no HTTP domain or healthcheck, exits after each
+attempt, and uses a `NEVER` restart policy.
+
+Railway scheduling may invoke only the explicit Danbooru target after a successful
+remote validation. Safebooru remains manual and cannot be included implicitly
+through a generic schedule. `apps.worker.main` remains an unused compatibility shell,
+not the production scheduler. See
+[the production collection runbook](production-collection.md).
 
 ## Metadata and adapter boundary
 
@@ -115,8 +124,10 @@ Collection uses two durable transaction phases:
 1. Create and commit a `running` `CrawlRun` before remote inspection, so an attempt is
    visible independently of its final outcome.
 2. After validation succeeds, add the snapshot, mark the run `succeeded`, and commit
-   both together. On any failure, roll back candidate work, reload the durable run,
-   mark it `failed` with sanitized details, and commit that terminal state.
+   both together. On an ordinary failure, roll back candidate work, reload the durable
+   run, mark it `failed` with sanitized details, and commit that terminal state.
+   Explicit async task cancellation after the durable `running` commit reconciles the
+   final commit before recording `cancelled`.
 
 This sequence prevents a rejected candidate or failed final commit from leaving an
 accepted snapshot behind. Site health remains in `BooruSnapshot.health_status`;
@@ -129,7 +140,7 @@ Evidence and error summaries exclude payload text, media URLs, and image data.
 
 ## Collection interval and analytics compatibility
 
-The manual collection CLI queries the latest snapshot for the selected booru. If it
+The one-shot collection CLI queries the latest snapshot for the selected booru. If it
 is less than 20 hours old, collection exits as skipped before HTTP or service work.
 `--force` bypasses only this interval; policy validation and anomaly protection still
 run.
@@ -150,6 +161,11 @@ API, collection, and stats commands. The opt-in PostgreSQL tests must use a sepa
 migrated, disposable `booruradar_integration` database. Their cleanup rechecks the
 actual database name and deletes only UUID-scoped test rows;
 `BOORURADAR_RUN_POSTGRES_TESTS=1` keeps them skipped by default.
+
+The Railway `web` and `collector-danbooru` services use the same Postgres service
+through environment-variable references. Provider-style `postgres://` and
+`postgresql://` URLs are normalized to the installed async psycopg driver. Resolved
+database credentials are never stored in repository configuration or documentation.
 
 Standard-library logging writes timestamped records to stdout. The current product
 has no user or authentication model, ownership-claim workflow, payment system,
