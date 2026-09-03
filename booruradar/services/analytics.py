@@ -17,6 +17,10 @@ class InvalidTimeIntervalError(ValueError):
     """Raised when elapsed time is zero or negative."""
 
 
+class ZeroBaselineError(ValueError):
+    """Raised when relative growth has no non-zero denominator."""
+
+
 @dataclass(frozen=True)
 class GrowthMetrics:
     previous_captured_at: datetime
@@ -79,4 +83,16 @@ def calculate_growth_metrics(previous: BooruSnapshot, current: BooruSnapshot) ->
         elapsed_hours=elapsed_hours,
         posts_per_day=posts_delta * 24.0 / elapsed_hours,
         provenance=prev_metric.provenance.value,
+    )
+
+
+def calculate_relative_growth_percent_per_day(metrics: GrowthMetrics) -> float:
+    """Return elapsed-window relative growth without rounding or clamping."""
+
+    if metrics.previous_total_posts == 0:
+        raise ZeroBaselineError("relative growth requires a non-zero previous total")
+    return (
+        (metrics.posts_delta / metrics.previous_total_posts)
+        * (24.0 / metrics.elapsed_hours)
+        * 100.0
     )

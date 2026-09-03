@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,8 +20,14 @@ from booruradar.services.catalog import (
     CatalogReadService,
     ComparisonRecord,
     GrowthAvailableRecord,
+    GrowthRankingEligibleRecord,
     GrowthUnavailableReason,
     GrowthUnavailableRecord,
+    LargestRankingEligibleRecord,
+    RankingIneligibleReason,
+    RankingIneligibleRecord,
+    RankingMode,
+    RankingResult,
     SnapshotRecord,
     TotalPostsRecord,
 )
@@ -87,6 +94,56 @@ GROWTH_B = GrowthUnavailableRecord(
     detail="At least two snapshots are required.",
 )
 
+LARGEST_A = LargestRankingEligibleRecord(
+    rank=2,
+    booru_id=BOORU_A_ID,
+    name=BOORU_A.name,
+    canonical_url=BOORU_A.canonical_url,
+    adapter_family=BOORU_A.adapter_family,
+    adapter_name=BOORU_A.adapter_name,
+    value=1_100,
+    provenance=MetricProvenance.OBSERVED,
+    latest_snapshot_id=SNAPSHOT_A_CURRENT.id,
+    latest_captured_at=SNAPSHOT_A_CURRENT.captured_at,
+)
+LARGEST_B = LargestRankingEligibleRecord(
+    rank=1,
+    booru_id=BOORU_B_ID,
+    name=BOORU_B.name,
+    canonical_url=BOORU_B.canonical_url,
+    adapter_family=BOORU_B.adapter_family,
+    adapter_name=BOORU_B.adapter_name,
+    value=2_000,
+    provenance=MetricProvenance.OBSERVED,
+    latest_snapshot_id=SNAPSHOT_B_CURRENT.id,
+    latest_captured_at=SNAPSHOT_B_CURRENT.captured_at,
+)
+GROWTH_RANK_A = GrowthRankingEligibleRecord(
+    rank=1,
+    booru_id=BOORU_A_ID,
+    name=BOORU_A.name,
+    canonical_url=BOORU_A.canonical_url,
+    adapter_family=BOORU_A.adapter_family,
+    adapter_name=BOORU_A.adapter_name,
+    value=100.0,
+    unit="posts/day",
+    provenance=MetricProvenance.OBSERVED,
+    latest_snapshot_id=SNAPSHOT_A_CURRENT.id,
+    latest_captured_at=SNAPSHOT_A_CURRENT.captured_at,
+    previous_snapshot_id=SNAPSHOT_A_PREVIOUS.id,
+    previous_captured_at=SNAPSHOT_A_PREVIOUS.captured_at,
+    elapsed_hours=24.0,
+    posts_delta=100,
+)
+RANKING_B_INELIGIBLE = RankingIneligibleRecord(
+    booru_id=BOORU_B_ID,
+    name=BOORU_B.name,
+    canonical_url=BOORU_B.canonical_url,
+    adapter_family=BOORU_B.adapter_family,
+    adapter_name=BOORU_B.adapter_name,
+    reason=RankingIneligibleReason.INSUFFICIENT_HISTORY,
+)
+
 
 class IsolatedCatalog:
     """A read seam with no database writer or outbound HTTP dependency."""
@@ -143,6 +200,39 @@ class IsolatedCatalog:
             return tuple(records[booru_id] for booru_id in booru_ids)
         except KeyError as error:
             raise CatalogNotFoundError(error.args[0]) from error
+
+    async def rank_boorus(
+        self,
+        *,
+        mode: RankingMode,
+        limit: int,
+        offset: int,
+    ) -> RankingResult:
+        self.calls.append(("rank_boorus", mode, limit, offset))
+        if mode is RankingMode.LARGEST:
+            items = (LARGEST_B, LARGEST_A)
+            eligible_count = 2
+            unit = "posts"
+        else:
+            eligible = GROWTH_RANK_A
+            if mode is RankingMode.RELATIVE_GROWTH:
+                eligible = replace(
+                    eligible,
+                    value=10.0,
+                    unit="percent/day",
+                )
+            items = (eligible, RANKING_B_INELIGIBLE)
+            eligible_count = 1
+            unit = "posts/day" if mode is RankingMode.FASTEST_GROWTH else "percent/day"
+        return RankingResult(
+            mode=mode,
+            unit=unit,
+            total=2,
+            eligible_count=eligible_count,
+            limit=limit,
+            offset=offset,
+            items=items[offset : offset + limit],
+        )
 
 
 def request(
@@ -309,9 +399,81 @@ def test_compare_requires_two_to_eight_unique_ids_and_preserves_order() -> None:
     assert duplicate_catalog.calls == []
 
 
+def test_ranking_response_is_typed_paginated_and_excludes_internal_fields() -> None:
+    response, catalog = request(
+        "/api/v1/rankings?mode=fastest_growth&limit=2&offset=0"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "fastest_growth"
+    assert payload["unit"] == "posts/day"
+    assert payload["total"] == 2
+    assert payload["eligible_count"] == 1
+    assert payload["items"][0]["rank"] == 1
+    assert payload["items"][0]["eligible"] is True
+    assert payload["items"][0]["value"] == 100.0
+    assert payload["items"][0]["provenance"] == "observed"
+    assert payload["items"][1] == {
+        "booru_id": str(BOORU_B_ID),
+        "name": BOORU_B.name,
+        "canonical_url": BOORU_B.canonical_url,
+        "adapter_family": BOORU_B.adapter_family,
+        "adapter_name": BOORU_B.adapter_name,
+        "rank": None,
+        "eligible": False,
+        "reason": "insufficient_history",
+    }
+    assert "value" not in payload["items"][1]
+    assert {
+        "metrics",
+        "source_url",
+        "crawl_run_id",
+        "details",
+        "responses",
+        "response_sha256",
+        "media_url",
+    }.isdisjoint(nested_keys(payload))
+    assert catalog.calls == [
+        ("rank_boorus", RankingMode.FASTEST_GROWTH, 2, 0)
+    ]
+
+
+def test_ranking_modes_units_and_global_rank_survive_pagination() -> None:
+    expected_units = {
+        "largest": "posts",
+        "fastest_growth": "posts/day",
+        "relative_growth": "percent/day",
+    }
+    for mode, unit in expected_units.items():
+        response, _ = request(f"/api/v1/rankings?mode={mode}")
+        assert response.status_code == 200
+        assert response.json()["unit"] == unit
+
+    paged, _ = request("/api/v1/rankings?mode=largest&limit=1&offset=1")
+    assert paged.status_code == 200
+    assert paged.json()["items"][0]["rank"] == 2
+    assert paged.json()["total"] == 2
+    assert paged.json()["eligible_count"] == 2
+
+
+def test_ranking_query_validation_fails_before_service_execution() -> None:
+    for query in (
+        "mode=unknown",
+        "limit=0",
+        "limit=101",
+        "offset=-1",
+        "offset=10001",
+    ):
+        response, catalog = request(f"/api/v1/rankings?{query}")
+        assert response.status_code == 422
+        assert catalog.calls == []
+
+
 def test_openapi_documents_typed_get_only_public_endpoints() -> None:
     application = create_app(Settings(environment="test"))
-    paths = application.openapi()["paths"]
+    openapi = application.openapi()
+    paths = openapi["paths"]
     public_paths = {path: operations for path, operations in paths.items() if path.startswith("/api/v1")}
 
     assert set(public_paths) == {
@@ -320,6 +482,7 @@ def test_openapi_documents_typed_get_only_public_endpoints() -> None:
         "/api/v1/boorus/{booru_id}/snapshots",
         "/api/v1/boorus/{booru_id}/growth",
         "/api/v1/compare",
+        "/api/v1/rankings",
     }
     assert all(set(operations) == {"get"} for operations in public_paths.values())
     growth_schema = public_paths["/api/v1/boorus/{booru_id}/growth"]["get"][
@@ -327,6 +490,18 @@ def test_openapi_documents_typed_get_only_public_endpoints() -> None:
     ]["200"]["content"]["application/json"]["schema"]
     assert "oneOf" in growth_schema
     assert growth_schema["discriminator"]["propertyName"] == "status"
+
+    ranking_operation = public_paths["/api/v1/rankings"]["get"]
+    ranking_schema = ranking_operation["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert "oneOf" in ranking_schema
+    assert ranking_schema["discriminator"]["propertyName"] == "mode"
+    assert openapi["components"]["schemas"]["RankingMode"]["enum"] == [
+        "largest",
+        "fastest_growth",
+        "relative_growth",
+    ]
 
 
 class RowsResult:

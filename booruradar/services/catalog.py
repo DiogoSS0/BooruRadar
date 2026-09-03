@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,9 @@ from booruradar.models.snapshot import BooruSnapshot
 from booruradar.services.analytics import (
     IncompatibleSnapshotsError,
     InvalidTimeIntervalError,
+    ZeroBaselineError,
     calculate_growth_metrics,
+    calculate_relative_growth_percent_per_day,
 )
 
 
@@ -31,6 +33,25 @@ class GrowthUnavailableReason(StrEnum):
     INSUFFICIENT_HISTORY = "insufficient_history"
     INCOMPATIBLE_SNAPSHOTS = "incompatible_snapshots"
     INVALID_INTERVAL = "invalid_interval"
+
+
+class RankingMode(StrEnum):
+    LARGEST = "largest"
+    FASTEST_GROWTH = "fastest_growth"
+    RELATIVE_GROWTH = "relative_growth"
+
+
+class RankingIneligibleReason(StrEnum):
+    MISSING_TOTAL_POSTS = "missing_total_posts"
+    INVALID_TOTAL_POSTS = "invalid_total_posts"
+    INSUFFICIENT_HISTORY = "insufficient_history"
+    INCOMPATIBLE_PROVENANCE = "incompatible_provenance"
+    INCOMPATIBLE_UNIT = "incompatible_unit"
+    INVALID_TIME_INTERVAL = "invalid_time_interval"
+    ZERO_BASELINE = "zero_baseline"
+
+
+RankingUnit: TypeAlias = Literal["posts", "posts/day", "percent/day"]
 
 
 @dataclass(frozen=True)
@@ -85,6 +106,79 @@ GrowthRecord = GrowthAvailableRecord | GrowthUnavailableRecord
 class ComparisonRecord:
     booru: BooruRecord
     growth: GrowthRecord
+
+
+@dataclass(frozen=True)
+class LargestRankingEligibleRecord:
+    rank: int
+    booru_id: uuid.UUID
+    name: str
+    canonical_url: str
+    adapter_family: str
+    adapter_name: str | None
+    value: int
+    provenance: MetricProvenance
+    latest_snapshot_id: uuid.UUID
+    latest_captured_at: datetime
+    unit: Literal["posts"] = field(default="posts", init=False)
+    eligible: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True)
+class GrowthRankingEligibleRecord:
+    rank: int
+    booru_id: uuid.UUID
+    name: str
+    canonical_url: str
+    adapter_family: str
+    adapter_name: str | None
+    value: float
+    unit: Literal["posts/day", "percent/day"]
+    provenance: MetricProvenance
+    latest_snapshot_id: uuid.UUID
+    latest_captured_at: datetime
+    previous_snapshot_id: uuid.UUID
+    previous_captured_at: datetime
+    elapsed_hours: float
+    posts_delta: int
+    posts_delta_unit: Literal["posts"] = field(default="posts", init=False)
+    eligible: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True)
+class RankingIneligibleRecord:
+    booru_id: uuid.UUID
+    name: str
+    canonical_url: str
+    adapter_family: str
+    adapter_name: str | None
+    reason: RankingIneligibleReason
+    rank: None = field(default=None, init=False)
+    eligible: Literal[False] = field(default=False, init=False)
+
+
+RankingItemRecord: TypeAlias = (
+    LargestRankingEligibleRecord
+    | GrowthRankingEligibleRecord
+    | RankingIneligibleRecord
+)
+
+
+@dataclass(frozen=True)
+class RankingResult:
+    mode: RankingMode
+    unit: RankingUnit
+    total: int
+    eligible_count: int
+    limit: int
+    offset: int
+    items: tuple[RankingItemRecord, ...]
+
+
+@dataclass(frozen=True)
+class _TotalPostsValidation:
+    record: TotalPostsRecord | None
+    reason: RankingIneligibleReason | None
 
 
 class CatalogReadService:
@@ -199,6 +293,65 @@ class CatalogReadService:
             for booru_id in booru_ids
         )
 
+    async def rank_boorus(
+        self,
+        *,
+        mode: RankingMode,
+        limit: int,
+        offset: int,
+    ) -> RankingResult:
+        boorus, snapshots_by_booru = await self._load_ranking_history()
+        eligible: list[LargestRankingEligibleRecord | GrowthRankingEligibleRecord] = []
+        ineligible: list[RankingIneligibleRecord] = []
+
+        for booru in boorus:
+            snapshots = snapshots_by_booru.get(booru.id, [])
+            if mode is RankingMode.LARGEST:
+                record = self._largest_ranking_record(booru, snapshots)
+            else:
+                record = self._growth_ranking_record(booru, snapshots, mode=mode)
+            if isinstance(record, RankingIneligibleRecord):
+                ineligible.append(record)
+            else:
+                eligible.append(record)
+
+        eligible.sort(
+            key=lambda record: (
+                -record.value,
+                record.name.lower(),
+                record.booru_id.int,
+            )
+        )
+        ranked_eligible = tuple(
+            replace(record, rank=rank)
+            for rank, record in enumerate(eligible, start=1)
+        )
+        ineligible.sort(
+            key=lambda record: (
+                record.reason.value,
+                record.name.lower(),
+                record.booru_id.int,
+            )
+        )
+        complete_result = (*ranked_eligible, *ineligible)
+        unit: RankingUnit
+        if mode is RankingMode.LARGEST:
+            unit = "posts"
+        elif mode is RankingMode.FASTEST_GROWTH:
+            unit = "posts/day"
+        else:
+            unit = "percent/day"
+
+        return RankingResult(
+            mode=mode,
+            unit=unit,
+            total=len(boorus),
+            eligible_count=len(ranked_eligible),
+            limit=limit,
+            offset=offset,
+            items=tuple(complete_result[offset : offset + limit]),
+        )
+
     @staticmethod
     def _latest_snapshot_id() -> object:
         return (
@@ -233,6 +386,184 @@ class CatalogReadService:
         booru = rows[0][0]
         snapshots = [snapshot for _, snapshot in rows if snapshot is not None]
         return booru, snapshots
+
+    async def _load_ranking_history(
+        self,
+    ) -> tuple[tuple[Booru, ...], dict[uuid.UUID, list[BooruSnapshot]]]:
+        ranked_snapshots = (
+            select(
+                BooruSnapshot.id.label("snapshot_id"),
+                BooruSnapshot.booru_id.label("booru_id"),
+                func.row_number()
+                .over(
+                    partition_by=BooruSnapshot.booru_id,
+                    order_by=(BooruSnapshot.captured_at.desc(), BooruSnapshot.id.desc()),
+                )
+                .label("snapshot_rank"),
+            )
+            .subquery()
+        )
+        statement = (
+            select(Booru, BooruSnapshot, ranked_snapshots.c.snapshot_rank)
+            .select_from(Booru)
+            .outerjoin(
+                ranked_snapshots,
+                and_(
+                    ranked_snapshots.c.booru_id == Booru.id,
+                    ranked_snapshots.c.snapshot_rank <= 2,
+                ),
+            )
+            .outerjoin(
+                BooruSnapshot,
+                BooruSnapshot.id == ranked_snapshots.c.snapshot_id,
+            )
+            .where(Booru.is_enabled.is_(True))
+            .order_by(
+                func.lower(Booru.name),
+                Booru.id,
+                ranked_snapshots.c.snapshot_rank.asc().nullslast(),
+            )
+        )
+        rows = (await self._session.execute(statement)).all()
+
+        boorus: dict[uuid.UUID, Booru] = {}
+        ranked_by_booru: dict[uuid.UUID, list[tuple[int, BooruSnapshot]]] = {}
+        for booru, snapshot, snapshot_rank in rows:
+            if not booru.is_enabled:
+                continue
+            boorus[booru.id] = booru
+            ranked_by_booru.setdefault(booru.id, [])
+            if snapshot is not None and snapshot_rank is not None and snapshot_rank <= 2:
+                ranked_by_booru[booru.id].append((snapshot_rank, snapshot))
+
+        snapshots_by_booru = {
+            booru_id: [
+                snapshot
+                for _, snapshot in sorted(
+                    ranked_snapshots_for_booru,
+                    key=lambda ranked: ranked[0],
+                )
+            ]
+            for booru_id, ranked_snapshots_for_booru in ranked_by_booru.items()
+        }
+        return tuple(boorus.values()), snapshots_by_booru
+
+    @classmethod
+    def _largest_ranking_record(
+        cls,
+        booru: Booru,
+        snapshots: list[BooruSnapshot],
+    ) -> LargestRankingEligibleRecord | RankingIneligibleRecord:
+        if not snapshots:
+            return cls._ranking_ineligible(
+                booru,
+                RankingIneligibleReason.MISSING_TOTAL_POSTS,
+            )
+        latest = snapshots[0]
+        validation = cls._validate_total_posts(latest.metrics)
+        if validation.record is None:
+            assert validation.reason is not None
+            return cls._ranking_ineligible(booru, validation.reason)
+        total_posts = validation.record
+        return LargestRankingEligibleRecord(
+            rank=0,
+            booru_id=booru.id,
+            name=booru.name,
+            canonical_url=booru.canonical_url,
+            adapter_family=booru.adapter_family,
+            adapter_name=booru.adapter_name,
+            value=total_posts.value,
+            provenance=total_posts.provenance,
+            latest_snapshot_id=latest.id,
+            latest_captured_at=latest.captured_at,
+        )
+
+    @classmethod
+    def _growth_ranking_record(
+        cls,
+        booru: Booru,
+        snapshots: list[BooruSnapshot],
+        *,
+        mode: RankingMode,
+    ) -> GrowthRankingEligibleRecord | RankingIneligibleRecord:
+        if len(snapshots) < 2:
+            return cls._ranking_ineligible(
+                booru,
+                RankingIneligibleReason.INSUFFICIENT_HISTORY,
+            )
+
+        current, previous = snapshots[0], snapshots[1]
+        current_validation = cls._validate_total_posts(current.metrics)
+        previous_validation = cls._validate_total_posts(previous.metrics)
+        for validation in (current_validation, previous_validation):
+            if validation.record is None:
+                assert validation.reason is not None
+                return cls._ranking_ineligible(booru, validation.reason)
+        assert current_validation.record is not None
+        assert previous_validation.record is not None
+        if current_validation.record.provenance is not previous_validation.record.provenance:
+            return cls._ranking_ineligible(
+                booru,
+                RankingIneligibleReason.INCOMPATIBLE_PROVENANCE,
+            )
+
+        try:
+            metrics = calculate_growth_metrics(previous, current)
+        except InvalidTimeIntervalError:
+            return cls._ranking_ineligible(
+                booru,
+                RankingIneligibleReason.INVALID_TIME_INTERVAL,
+            )
+        except (IncompatibleSnapshotsError, ValueError):
+            return cls._ranking_ineligible(
+                booru,
+                RankingIneligibleReason.INVALID_TOTAL_POSTS,
+            )
+
+        if mode is RankingMode.RELATIVE_GROWTH:
+            try:
+                value = calculate_relative_growth_percent_per_day(metrics)
+            except ZeroBaselineError:
+                return cls._ranking_ineligible(
+                    booru,
+                    RankingIneligibleReason.ZERO_BASELINE,
+                )
+            unit: Literal["posts/day", "percent/day"] = "percent/day"
+        else:
+            value = metrics.posts_per_day
+            unit = "posts/day"
+
+        return GrowthRankingEligibleRecord(
+            rank=0,
+            booru_id=booru.id,
+            name=booru.name,
+            canonical_url=booru.canonical_url,
+            adapter_family=booru.adapter_family,
+            adapter_name=booru.adapter_name,
+            value=value,
+            unit=unit,
+            provenance=MetricProvenance(metrics.provenance),
+            latest_snapshot_id=current.id,
+            latest_captured_at=current.captured_at,
+            previous_snapshot_id=previous.id,
+            previous_captured_at=previous.captured_at,
+            elapsed_hours=metrics.elapsed_hours,
+            posts_delta=metrics.posts_delta,
+        )
+
+    @staticmethod
+    def _ranking_ineligible(
+        booru: Booru,
+        reason: RankingIneligibleReason,
+    ) -> RankingIneligibleRecord:
+        return RankingIneligibleRecord(
+            booru_id=booru.id,
+            name=booru.name,
+            canonical_url=booru.canonical_url,
+            adapter_family=booru.adapter_family,
+            adapter_name=booru.adapter_name,
+            reason=reason,
+        )
 
     @classmethod
     def _calculate_growth(
@@ -308,20 +639,49 @@ class CatalogReadService:
             total_posts=cls._project_total_posts(snapshot.metrics),
         )
 
+    @classmethod
+    def _project_total_posts(cls, metrics: object) -> TotalPostsRecord | None:
+        return cls._validate_total_posts(metrics).record
+
     @staticmethod
-    def _project_total_posts(metrics: object) -> TotalPostsRecord | None:
+    def _validate_total_posts(metrics: object) -> _TotalPostsValidation:
         if not isinstance(metrics, dict):
-            return None
-        envelope = metrics.get("total_posts")
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.INVALID_TOTAL_POSTS,
+            )
+        if "total_posts" not in metrics:
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.MISSING_TOTAL_POSTS,
+            )
+        envelope = metrics["total_posts"]
         if not isinstance(envelope, dict):
-            return None
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.INVALID_TOTAL_POSTS,
+            )
 
         value = envelope.get("value")
         unit = envelope.get("unit")
-        if type(value) is not int or value < 0 or unit != "posts":
-            return None
+        if unit != "posts":
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.INCOMPATIBLE_UNIT,
+            )
+        if type(value) is not int or value < 0:
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.INVALID_TOTAL_POSTS,
+            )
         try:
             provenance = MetricProvenance(envelope.get("provenance"))
         except (TypeError, ValueError):
-            return None
-        return TotalPostsRecord(value=value, provenance=provenance)
+            return _TotalPostsValidation(
+                record=None,
+                reason=RankingIneligibleReason.INVALID_TOTAL_POSTS,
+            )
+        return _TotalPostsValidation(
+            record=TotalPostsRecord(value=value, provenance=provenance),
+            reason=None,
+        )

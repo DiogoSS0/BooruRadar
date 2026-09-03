@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -30,6 +30,7 @@ from booruradar.services import (
     SnapshotCollectionService,
     SuspiciousObservationError,
 )
+from booruradar.services.catalog import CatalogReadService, RankingIneligibleReason, RankingMode
 
 
 pytestmark = pytest.mark.skipif(
@@ -683,5 +684,127 @@ def test_target_scoped_advisory_lock_excludes_only_the_same_target() -> None:
 
             async with collection_lock(database.engine, "danbooru") as reacquired:
                 assert reacquired is True
+
+    run(exercise())
+
+
+def test_ranking_window_query_uses_latest_two_and_uuid_tie_break_on_postgres() -> None:
+    async def exercise() -> None:
+        async with postgres_test_database() as database:
+            tied = database.make_booru(
+                AdapterFamily.DANBOORU,
+                adapter_name="ranking-tied",
+            )
+            tied.name = "Tied"
+            single = database.make_booru(
+                AdapterFamily.GELBOORU,
+                adapter_name="ranking-single",
+            )
+            single.name = "Single"
+            disabled = database.make_booru(
+                AdapterFamily.GELBOORU,
+                adapter_name="ranking-disabled",
+            )
+            disabled.name = "Disabled"
+            disabled.is_enabled = False
+            captured = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+
+            async with AsyncSession(database.engine, expire_on_commit=False) as session:
+                session.add_all((tied, single, disabled))
+
+                def add_snapshot(
+                    owner: Booru,
+                    *,
+                    snapshot_id: int,
+                    total_posts: int,
+                    captured_at: datetime,
+                ) -> None:
+                    crawl_run_id = uuid.uuid4()
+                    session.add(
+                        CrawlRun(
+                            id=crawl_run_id,
+                            booru_id=owner.id,
+                            adapter_name=owner.adapter_name or owner.adapter_family,
+                            started_at=captured_at,
+                            finished_at=captured_at,
+                            status=CrawlRunStatus.SUCCEEDED,
+                            details={"quality_status": "accepted"},
+                        )
+                    )
+                    session.add(
+                        BooruSnapshot(
+                            id=uuid.UUID(int=snapshot_id),
+                            booru_id=owner.id,
+                            crawl_run_id=crawl_run_id,
+                            captured_at=captured_at,
+                            health_status="ok",
+                            health_provenance=MetricProvenance.OBSERVED,
+                            capabilities=[],
+                            capabilities_provenance=MetricProvenance.OBSERVED,
+                            metrics={
+                                "total_posts": {
+                                    "value": total_posts,
+                                    "provenance": "observed",
+                                    "unit": "posts",
+                                }
+                            },
+                            source_url=owner.canonical_url,
+                        )
+                    )
+
+                add_snapshot(
+                    tied,
+                    snapshot_id=1001,
+                    total_posts=100,
+                    captured_at=captured - timedelta(days=1),
+                )
+                add_snapshot(
+                    tied,
+                    snapshot_id=1002,
+                    total_posts=200,
+                    captured_at=captured,
+                )
+                add_snapshot(
+                    tied,
+                    snapshot_id=1003,
+                    total_posts=260,
+                    captured_at=captured,
+                )
+                add_snapshot(
+                    single,
+                    snapshot_id=2001,
+                    total_posts=500,
+                    captured_at=captured,
+                )
+                add_snapshot(
+                    disabled,
+                    snapshot_id=3001,
+                    total_posts=999_999,
+                    captured_at=captured,
+                )
+                await session.commit()
+
+                service = CatalogReadService(session)
+                largest = await service.rank_boorus(
+                    mode=RankingMode.LARGEST,
+                    limit=50,
+                    offset=0,
+                )
+                growth = await service.rank_boorus(
+                    mode=RankingMode.FASTEST_GROWTH,
+                    limit=50,
+                    offset=0,
+                )
+
+            assert largest.total == 2
+            assert largest.eligible_count == 2
+            assert [(item.name, item.value, item.rank) for item in largest.items] == [
+                ("Single", 500, 1),
+                ("Tied", 260, 2),
+            ]
+            reasons = {item.booru_id: item.reason for item in growth.items}
+            assert reasons[single.id] is RankingIneligibleReason.INSUFFICIENT_HISTORY
+            assert reasons[tied.id] is RankingIneligibleReason.INVALID_TIME_INTERVAL
+            assert disabled.id not in reasons
 
     run(exercise())

@@ -11,9 +11,13 @@ from apps.api.schemas import (
     BooruResponse,
     ComparisonItemResponse,
     ComparisonResponse,
+    FastestGrowthRankingResponse,
     GrowthAvailableResponse,
     GrowthResponse,
     GrowthUnavailableResponse,
+    LargestRankingResponse,
+    RankingResponse,
+    RelativeGrowthRankingResponse,
     SnapshotListResponse,
     SnapshotResponse,
 )
@@ -22,6 +26,8 @@ from booruradar.services.catalog import (
     CatalogNotFoundError,
     CatalogReadService,
     GrowthAvailableRecord,
+    RankingMode,
+    RankingResult,
 )
 
 
@@ -48,6 +54,29 @@ def _growth_response(record: object) -> GrowthResponse:
     if isinstance(record, GrowthAvailableRecord):
         return GrowthAvailableResponse.model_validate(record)
     return GrowthUnavailableResponse.model_validate(record)
+
+
+def _ranking_response(record: RankingResult) -> RankingResponse:
+    if record.mode is RankingMode.LARGEST:
+        return LargestRankingResponse.model_validate(record)
+    if record.mode is RankingMode.FASTEST_GROWTH:
+        return FastestGrowthRankingResponse.model_validate(record)
+    return RelativeGrowthRankingResponse.model_validate(record)
+
+
+@router.get(
+    "/rankings",
+    response_model=RankingResponse,
+    summary="Rank enabled boorus from their latest snapshots",
+)
+async def list_rankings(
+    service: CatalogService,
+    mode: RankingMode = RankingMode.LARGEST,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+) -> RankingResponse:
+    record = await service.rank_boorus(mode=mode, limit=limit, offset=offset)
+    return _ranking_response(record)
 
 
 @router.get(

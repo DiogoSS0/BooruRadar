@@ -132,4 +132,4 @@ def test_docs_and_openapi_remain_available() -> None:
     assert "swagger-ui" in docs.text
     assert openapi.status_code == 200
     assert "/api/v1/boorus" in openapi.json()["paths"]
-    assert "/api/v1/rankings" not in openapi.json()["paths"]
+    assert "/api/v1/rankings" in openapi.json()["paths"]

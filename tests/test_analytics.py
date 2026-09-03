@@ -7,7 +7,9 @@ from booruradar.models.snapshot import BooruSnapshot
 from booruradar.services.analytics import (
     IncompatibleSnapshotsError,
     InvalidTimeIntervalError,
+    ZeroBaselineError,
     calculate_growth_metrics,
+    calculate_relative_growth_percent_per_day,
 )
 
 
@@ -137,3 +139,49 @@ def test_cross_booru_comparison_rejected():
             snapshot(1000, t1),
             snapshot(1100, t2, booru_id=uuid.uuid4()),
         )
+
+
+def test_relative_growth_uses_the_actual_elapsed_window_without_rounding():
+    previous_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    current_at = datetime(2026, 1, 2, 0, 0, tzinfo=UTC)
+    metrics = calculate_growth_metrics(
+        snapshot(1_000, previous_at),
+        snapshot(1_125, current_at),
+    )
+
+    assert calculate_relative_growth_percent_per_day(metrics) == 25.0
+
+
+@pytest.mark.parametrize(
+    ("previous_total", "current_total", "expected"),
+    [
+        (1_000, 900, -10.0),
+        (1_000, 1_000, 0.0),
+    ],
+    ids=["negative", "zero"],
+)
+def test_relative_growth_preserves_real_negative_and_zero_values(
+    previous_total: int,
+    current_total: int,
+    expected: float,
+):
+    previous_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    current_at = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+    metrics = calculate_growth_metrics(
+        snapshot(previous_total, previous_at),
+        snapshot(current_total, current_at),
+    )
+
+    assert calculate_relative_growth_percent_per_day(metrics) == expected
+
+
+def test_relative_growth_rejects_a_zero_baseline():
+    previous_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    current_at = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+    metrics = calculate_growth_metrics(
+        snapshot(0, previous_at),
+        snapshot(10, current_at),
+    )
+
+    with pytest.raises(ZeroBaselineError):
+        calculate_relative_growth_percent_per_day(metrics)

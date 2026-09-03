@@ -5,7 +5,7 @@
 BooruRadar is a metadata-only monitoring application. The current slice supports
 a production-ready one-shot Danbooru collector, explicit manual Safebooru collection,
 accepted snapshot history, compatible growth analytics, a read-only public catalog
-API, and a dashboard served by that API.
+and ranking API, and a dashboard served by that API.
 
 The system stores normalized aggregate metadata and bounded response evidence. It
 does not download or persist image/video bytes, direct media URLs, or raw response
@@ -45,7 +45,9 @@ family-specific acceptance requirements are explicit collection policies.
 - `/api/v1/boorus`, `/api/v1/boorus/{booru_id}`,
   `/api/v1/boorus/{booru_id}/snapshots`, and
   `/api/v1/boorus/{booru_id}/growth` for bounded catalog projections;
-- `/api/v1/compare` for two to eight unique enabled booru IDs.
+- `/api/v1/compare` for two to eight unique enabled booru IDs;
+- `/api/v1/rankings` for largest, absolute-growth, and relative-growth rankings over
+  all enabled boorus.
 
 Catalog operations are read-only. A comparison calculates growth independently
 within each selected booru; it never treats two different boorus as a historical
@@ -152,6 +154,29 @@ Danbooru normally yields compatible `estimated` pairs; Safebooru normally yields
 compatible `observed` pairs. Mixed provenance, cross-booru pairs, malformed values,
 or invalid time intervals produce an explicit unavailable result. Available growth
 is normalized to 24 hours from the real elapsed interval.
+
+## Ranking read path
+
+The route layer validates ranking mode and pagination and serializes a typed,
+mode-discriminated response. `CatalogReadService` owns eligibility, ordering, global
+rank assignment, and pagination. The analytics layer owns the pure absolute and
+relative calculations.
+
+One window query loads all enabled boorus and at most their newest two snapshots,
+using `row_number()` per booru with `captured_at DESC, id DESC`. Python then validates
+the metric envelopes and calculates rankings without any per-booru database reads.
+Eligible entries are sorted by value, case-insensitive name, and UUID; ranks are
+assigned before ineligible entries are appended and before pagination is applied.
+Ineligible entries sort deterministically by reason, name, and UUID.
+
+Largest rankings need one valid latest total. Growth rankings use exactly the newest
+pair and never search older history when that pair is incompatible. Matching
+provenance and `posts` units are required, and provenance is returned unchanged.
+Negative and genuine zero growth remain eligible, while missing/incompatible history
+has no numeric value. Relative growth uses the actual elapsed interval and treats a
+zero previous total as explicitly ineligible. The endpoint remains read-only and
+exposes neither raw metric JSON nor crawl, response, source-endpoint, or media data.
+See [the Ranking API V1 contract](ranking-readiness.md).
 
 ## Configuration and operational boundaries
 

@@ -63,6 +63,9 @@ While the API is running:
 - `GET /api/v1/boorus/{booru_id}/snapshots` returns recent accepted history;
 - `GET /api/v1/boorus/{booru_id}/growth` returns latest-pair growth or an explicit
   unavailable reason;
+- `GET /api/v1/rankings?mode=largest|fastest_growth|relative_growth` ranks every
+  enabled booru, keeps ineligible sources explicit, and assigns global ranks before
+  pagination;
 - `GET /api/v1/compare?booru_id=<uuid>&booru_id=<uuid>` compares two to eight unique
   enabled boorus, keeping each booru's growth calculation isolated to its own history.
 
@@ -165,4 +168,4 @@ docs/                  Architecture, adapter, and data-model documentation
 See [the architecture](docs/ARCHITECTURE.md), [the data model](docs/DATA_MODEL.md),
 [the adapter guide](docs/ADAPTERS.md),
 [the production collection runbook](docs/production-collection.md), and
-[the ranking-readiness plan](docs/ranking-readiness.md) for detailed boundaries.
+[the Ranking API V1 contract](docs/ranking-readiness.md) for detailed boundaries.
