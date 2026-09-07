@@ -53,8 +53,8 @@ def test_homepage_is_public_product_html_with_real_destinations() -> None:
     assert "BooruRadar" in response.text
     assert "Discover what’s happening across the booru ecosystem." in response.text
     assert response.text.count("<h1") == 1
-    assert 'href="/assets/styles.css"' in response.text
-    assert 'src="/assets/app.js"' in response.text
+    assert 'href="/assets/styles.css?v=ranking-v1"' in response.text
+    assert 'src="/assets/app.js?v=ranking-v1"' in response.text
     assert 'src="/assets/booruradar-mascot.png"' in response.text
     assert 'alt="BooruRadar mascot holding a scanner and pointing toward the rankings"' in response.text
     assert 'href="/docs"' in response.text
