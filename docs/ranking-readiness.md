@@ -151,3 +151,15 @@ Tests cover all modes and units, ordering and ties, rank-before-pagination, stab
 ineligibility, genuine zero and negative growth, provenance preservation, a single
 query, unsafe-field exclusion, OpenAPI discrimination, and PostgreSQL-specific
 window and UUID tie ordering.
+
+## Homepage presentation
+
+The public homepage consumes this endpoint directly for `largest`,
+`fastest_growth`, and `relative_growth`. It renders `items` in response order, shows
+the supplied global `rank`, and uses backend `limit`/`offset` pagination. It does not
+duplicate formulas or derive a client-side ranking.
+
+Eligible zero and negative values remain numeric results. Ineligible records are
+shown with their stable reason and without a fake value, provenance, or timing
+context. The small ecosystem snapshot reuses top-level counts and eligible items
+from the same API responses; it does not aggregate a new metric in the browser.

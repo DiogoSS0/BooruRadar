@@ -52,7 +52,12 @@ BOORURADAR_DATABASE_URL='postgresql+psycopg:///booruradar_history' \
 the disposable integration-test database. The default Compose setup can instead use
 the URL in `.env`.
 
-While the API is running:
+While the API is running, the homepage opens directly on the API-backed public
+rankings. Ranking order, global rank, eligibility, units, and provenance come from
+the server; the browser formats those values but does not recalculate or re-rank
+them.
+
+Available surfaces:
 
 - `GET /` serves the read-only dashboard;
 - `/docs` serves interactive OpenAPI documentation;
@@ -69,8 +74,11 @@ While the API is running:
 - `GET /api/v1/compare?booru_id=<uuid>&booru_id=<uuid>` compares two to eight unique
   enabled boorus, keeping each booru's growth calculation isolated to its own history.
 
-The discovery homepage and catalog API are read-only projections. They expose normalized
-aggregate metrics and provenance, never adapter response payloads or media data.
+The discovery homepage and catalog API are read-only projections. Growth-ineligible
+sources remain visible with an explicit reason and no substitute zero. The activity
+section stays in a truthful history-accumulating state until an ecosystem-wide series
+exists. These surfaces expose normalized aggregate metrics and provenance, never
+adapter response payloads or media data.
 
 ## Manual collection
 

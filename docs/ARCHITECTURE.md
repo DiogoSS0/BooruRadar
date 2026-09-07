@@ -29,7 +29,10 @@ core <── shared configuration, persistence setup, enums, and logging
 - `models` owns SQLAlchemy persistence and metric envelopes.
 - `core` contains cross-cutting configuration, database, enum, and logging support.
 
-The dashboard talks to the API rather than the database. API routes and the worker do
+The dashboard talks to the API rather than the database. Its primary read model is
+`/api/v1/rankings`; the browser preserves API order, global rank, eligibility, unit,
+and provenance. It performs presentation formatting only and does not duplicate
+ranking or growth formulas. API routes and the worker do
 not import each other. Family-specific response parsing stays inside adapters;
 family-specific acceptance requirements are explicit collection policies.
 
@@ -177,6 +180,14 @@ has no numeric value. Relative growth uses the actual elapsed interval and treat
 zero previous total as explicitly ineligible. The endpoint remains read-only and
 exposes neither raw metric JSON nor crawl, response, source-endpoint, or media data.
 See [the Ranking API V1 contract](ranking-readiness.md).
+
+The public homepage uses the same discriminated contract for its three ranking tabs.
+Ineligible records are rendered through a bounded reason-to-copy map and never gain a
+numeric fallback, provenance, or measurement window in the browser. Pagination sends
+`limit` and `offset` back to the API and displays the global ranks returned by the
+service. Compare and per-source history remain separate API projections. Because no
+ecosystem aggregate history endpoint exists yet, the homepage presents an explicit
+history-accumulating state instead of synthesizing a chart.
 
 ## Configuration and operational boundaries
 

@@ -4,16 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <meta
-      name="description"
-      content="Discover and compare public metadata from booru communities with transparent provenance."
-    >
-    <title>BooruRadar · Scan. Discover. Track.</title>
+    <meta name="description" content="Rank and compare public booru communities by size and measured growth with explicit provenance.">
+    <title>BooruRadar · Public booru rankings</title>
     <link rel="stylesheet" href="/assets/styles.css">
     <script type="module" src="/assets/app.js"></script>
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to content</a>
+    <a class="skip-link" href="#main-content">Skip to rankings</a>
 
     <header class="site-header">
       <div class="shell header-inner">
@@ -21,377 +18,178 @@
           <span class="radar-mark" aria-hidden="true"><span></span></span>
           <span class="wordmark">Booru<span>Radar</span></span>
         </a>
-
-        <button
-          class="nav-toggle"
-          id="nav-toggle"
-          type="button"
-          aria-expanded="false"
-          aria-controls="primary-nav"
-          aria-label="Open navigation"
-        >
+        <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation">
           <span></span><span></span><span></span>
         </button>
-
         <nav class="primary-nav" id="primary-nav" aria-label="Primary navigation">
-          <a href="#explore">Explore</a>
+          <a href="#ecosystem">Explore</a>
+          <a href="#rankings">Rankings</a>
           <a href="#compare">Compare</a>
-          <a href="/docs">API</a>
           <a href="#methodology">Methodology</a>
-          <a
-            href="https://github.com/DiogoSS0/BooruRadar"
-            target="_blank"
-            rel="noopener noreferrer"
-          >GitHub</a>
+          <a href="/docs">API</a>
+          <a href="https://github.com/DiogoSS0/BooruRadar" target="_blank" rel="noopener noreferrer">GitHub</a>
         </nav>
-
-        <a class="button button-header" href="#explore">Explore boorus</a>
+        <a class="button button-header" href="#rankings">Explore rankings</a>
       </div>
     </header>
 
     <main id="main-content">
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="hero-grid" aria-hidden="true"></div>
-        <div class="hero-orbit hero-orbit-one" aria-hidden="true"></div>
-        <div class="hero-orbit hero-orbit-two" aria-hidden="true"></div>
-
+        <div class="hero-radar" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="shell hero-layout">
           <div class="hero-copy">
-            <p class="brand-motif">
-              <span>Scan</span><i aria-hidden="true"></i>
-              <span>Discover</span><i aria-hidden="true"></i>
-              <span>Track</span>
-            </p>
+            <p class="brand-motif"><span>Scan</span><i aria-hidden="true"></i><span>Discover</span><i aria-hidden="true"></i><span>Track</span></p>
             <h1 id="hero-title">Discover what’s happening across the booru ecosystem.</h1>
-            <p class="hero-summary">
-              BooruRadar tracks public metadata from booru communities over time, so you
-              can explore active sources, compare change, and understand every metric’s
-              evidence.
-            </p>
+            <p class="hero-summary">Track size, growth and historical activity across public booru communities with explicit metric provenance.</p>
             <div class="hero-actions">
-              <a class="button button-primary" href="#explore">
-                Explore boorus <span aria-hidden="true">→</span>
-              </a>
-              <a class="button button-secondary" href="/docs">
-                View API <span aria-hidden="true">↗</span>
-              </a>
+              <a class="button button-primary" href="#rankings">Explore rankings <span aria-hidden="true">→</span></a>
+              <a class="button button-secondary" href="#compare">Compare boorus <span aria-hidden="true">↘</span></a>
             </div>
-
-            <section class="signal-band" aria-labelledby="signals-title">
-              <h2 class="visually-hidden" id="signals-title">Live public catalog signals</h2>
-              <p
-                class="connection-state visually-hidden"
-                id="catalog-connection"
-                role="status"
-                aria-live="polite"
-              >
-                <span class="connection-dot" aria-hidden="true"></span>
-                <span id="catalog-connection-label">Connecting to the public API</span>
-              </p>
-              <dl class="signal-list" id="catalog-signals" aria-busy="true">
-                <div>
-                  <dt>Tracked boorus</dt>
-                  <dd id="signal-tracked">—</dd>
-                  <span id="signal-tracked-note">Loading catalog</span>
-                </div>
-                <div>
-                  <dt>Reporting sources</dt>
-                  <dd id="signal-reporting">—</dd>
-                  <span>Accepted snapshot</span>
-                </div>
-                <div>
-                  <dt>Latest observation</dt>
-                  <dd class="signal-time" id="signal-latest">—</dd>
-                  <span id="signal-latest-note">Waiting for data</span>
-                </div>
-              </dl>
-            </section>
+            <div class="hero-status" aria-label="Live product status">
+              <span class="connection-dot" aria-hidden="true"></span>
+              <strong id="hero-source-count">Connecting to ranking data</strong><span aria-hidden="true">·</span>
+              <span id="hero-latest-state">Provenance stays explicit</span>
+            </div>
+            <p class="visually-hidden" id="ranking-connection" role="status" aria-live="polite"><span id="ranking-connection-label">Connecting to the public API</span></p>
           </div>
-
           <div class="hero-visual">
-            <div class="radar-stage" aria-hidden="true">
-              <span class="radar-ring radar-ring-one"></span>
-              <span class="radar-ring radar-ring-two"></span>
-              <span class="radar-ring radar-ring-three"></span>
-              <span class="radar-sweep"></span>
-              <span class="radar-dot radar-dot-one"></span>
-              <span class="radar-dot radar-dot-two"></span>
-              <span class="radar-dot radar-dot-three"></span>
-            </div>
-            <img
-              class="mascot"
-              src="/assets/booruradar-mascot.png"
-              alt="BooruRadar mascot holding a scanner and pointing ahead"
-              width="1024"
-              height="1536"
-              fetchpriority="high"
-            >
-            <aside class="hero-card hero-card-metadata">
-              <span class="hero-card-icon" aria-hidden="true">◎</span>
-              <div>
-                <small>Live catalog</small>
-                <strong id="hero-source-count">Connecting to public data</strong>
-              </div>
-            </aside>
-            <aside class="hero-card hero-card-source">
-              <span class="hero-card-icon" aria-hidden="true">⌁</span>
-              <div>
-                <small>Source quality</small>
-                <strong>Observed / Estimated</strong>
-              </div>
-            </aside>
+            <img class="mascot" src="/assets/booruradar-mascot.png" alt="BooruRadar mascot holding a scanner and pointing toward the rankings" width="1024" height="1536" fetchpriority="high">
           </div>
         </div>
       </section>
 
-      <div class="light-stage">
-        <section class="section shell explore-section" id="explore" aria-labelledby="explore-title">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Explore the ecosystem</p>
-              <h2 id="explore-title">Tracked boorus</h2>
+      <div class="analytics-canvas">
+        <section class="ecosystem-band shell" id="ecosystem" aria-labelledby="ecosystem-title">
+          <div class="ecosystem-heading"><p class="section-kicker">Live ecosystem snapshot</p><h2 id="ecosystem-title">What the data says now</h2></div>
+          <dl class="ecosystem-metrics" id="ecosystem-metrics" aria-busy="true">
+            <div><dt>Largest tracked booru</dt><dd id="snapshot-largest-name">—</dd><span id="snapshot-largest-value">Loading ranking data</span></div>
+            <div><dt>Fastest measured growth</dt><dd id="snapshot-growth-value">—</dd><span id="snapshot-growth-note">Loading compatible history</span></div>
+            <div><dt>Tracked sources</dt><dd id="snapshot-tracked">—</dd><span>Enabled public communities</span></div>
+            <div><dt>Growth coverage</dt><dd id="snapshot-eligible">—</dd><span id="snapshot-eligible-note">Compatible latest pairs</span></div>
+          </dl>
+        </section>
+
+        <section class="section rankings-section shell" id="rankings" aria-labelledby="rankings-title">
+          <div class="rankings-heading">
+            <div><p class="section-kicker">Public discovery</p><h2 id="rankings-title">Booru rankings</h2><p>Compare scale, measured growth and metric provenance across tracked public communities.</p></div>
+            <div class="ranking-freshness"><span class="connection-dot" aria-hidden="true"></span><span id="ranking-freshness">Live API data</span></div>
+          </div>
+
+          <div class="ranking-toolbar">
+            <div class="ranking-tabs" role="tablist" aria-label="Ranking mode">
+              <button class="ranking-tab is-active" id="ranking-tab-largest" type="button" role="tab" aria-selected="true" aria-controls="ranking-panel" data-ranking-mode="largest">Largest</button>
+              <button class="ranking-tab" id="ranking-tab-fastest-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="fastest_growth">Fastest Growth</button>
+              <button class="ranking-tab" id="ranking-tab-relative-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="relative_growth">Relative Growth</button>
             </div>
-            <div class="explore-controls" id="compare">
-              <div class="provenance-guide" aria-label="Metric provenance guide">
-                <span class="provenance-badge provenance-observed">Observed</span>
-                <span class="provenance-badge provenance-estimated">Estimated</span>
-              </div>
-              <div class="compare-action">
-                <span id="compare-selection" aria-live="polite">0 selected</span>
-                <button class="button button-outline" id="compare-button" type="button" disabled>
-                  Compare selected
-                </button>
-              </div>
+            <div class="ranking-context"><strong id="ranking-summary">Loading rankings</strong><span id="ranking-mode-description">Latest valid total posts</span></div>
+          </div>
+
+          <div class="ranking-panel" id="ranking-panel" role="tabpanel" aria-labelledby="ranking-tab-largest">
+            <div class="ranking-loading" id="ranking-loading" role="status">
+              <span class="visually-hidden">Loading ranking rows</span>
+              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+            </div>
+            <div class="notice notice-error" id="ranking-error" role="alert" hidden>
+              <div><strong>Ranking data temporarily unavailable.</strong><span id="ranking-error-message">The public API could not be reached.</span></div>
+              <button class="button button-outline" id="ranking-retry" type="button">Try again</button>
+            </div>
+            <div class="notice" id="ranking-empty" role="status" hidden><div><strong>No tracked sources are available yet.</strong><span>The ranking is connected and ready for the first public source.</span></div></div>
+            <div class="ranking-table-wrap" id="ranking-results" hidden>
+              <table class="ranking-table">
+                <caption class="visually-hidden" id="ranking-caption">Public booru ranking supplied by the BooruRadar API</caption>
+                <thead><tr><th scope="col">Rank</th><th scope="col">Booru</th><th scope="col" id="ranking-metric-heading">Total posts</th><th scope="col">Provenance</th><th scope="col" id="ranking-context-heading">Measured</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody id="ranking-body"></tbody>
+              </table>
+            </div>
+            <div class="ranking-pagination" id="ranking-pagination" hidden>
+              <span id="ranking-page-status" aria-live="polite">Showing 0 sources</span>
+              <div><button class="pagination-button" id="ranking-previous" type="button">← Previous</button><button class="pagination-button" id="ranking-next" type="button">Next →</button></div>
             </div>
           </div>
 
-          <div class="catalog-loading" id="catalog-loading" role="status">
-            <span class="loader" aria-hidden="true"></span>
-            <span>Loading the public catalog…</span>
-          </div>
-          <div class="notice notice-error" id="catalog-error" role="alert" hidden>
-            <div>
-              <strong>Live ecosystem data is temporarily unavailable.</strong>
-              <span id="catalog-error-message">The public API could not be reached.</span>
-            </div>
-            <button class="button button-outline" id="catalog-retry" type="button">Try again</button>
-          </div>
-          <div class="notice" id="catalog-empty" role="status" hidden>
-            <div>
-              <strong>No tracked boorus are available yet.</strong>
-              <span>The public catalog is connected and ready for its first source.</span>
-            </div>
+          <div class="compare-dock" id="compare" aria-live="polite">
+            <div><strong>Compare selected boorus</strong><span id="compare-selection">Choose 2–8 sources from the ranking.</span></div>
+            <button class="button button-outline" id="compare-button" type="button" disabled>Compare selected</button>
           </div>
 
-          <div class="booru-grid" id="booru-grid" aria-live="polite" hidden></div>
+          <section class="compare-panel" id="compare-panel" aria-labelledby="compare-title" hidden>
+            <div class="panel-topbar"><div><p class="section-kicker">Side by side</p><h3 id="compare-title">Selected comparison</h3></div><button class="text-button" id="compare-close" type="button">Close comparison</button></div>
+            <div class="panel-loading" id="compare-loading" role="status" hidden><span class="loader" aria-hidden="true"></span><span>Loading compatible comparison data…</span></div>
+            <div class="notice notice-error" id="compare-error" role="alert" hidden><div><strong>Comparison is temporarily unavailable.</strong><span id="compare-error-message">The selected sources could not be compared.</span></div></div>
+            <div class="data-table-wrap" id="compare-results" hidden>
+              <table class="data-table"><caption>Latest public metadata for the selected boorus</caption><thead><tr><th scope="col">Source</th><th scope="col">Total posts</th><th scope="col">Evidence</th><th scope="col">Daily pace</th><th scope="col">Net change</th><th scope="col">Latest capture</th></tr></thead><tbody id="compare-body"></tbody></table>
+            </div>
+          </section>
 
           <section class="detail-panel" id="detail-panel" aria-labelledby="detail-title" hidden>
-            <div class="detail-topbar">
-              <button class="text-button" id="detail-close" type="button">← Back to tracked boorus</button>
-              <span class="detail-state">Accepted public data</span>
-            </div>
+            <div class="panel-topbar"><button class="text-button" id="detail-close" type="button">← Back to rankings</button><span class="detail-state">Accepted public data</span></div>
             <div class="detail-heading">
-              <div>
-                <p class="section-kicker">Source history</p>
-                <h2 id="detail-title">Source</h2>
-                <p id="detail-family">Adapter family</p>
-              </div>
-              <a
-                class="button button-outline"
-                id="detail-link"
-                href="#"
-                target="_blank"
-                rel="noopener noreferrer"
-                hidden
-              >Visit public site ↗</a>
+              <div><p class="section-kicker">Source intelligence</p><h2 id="detail-title">Source</h2><p id="detail-family">Adapter family</p></div>
+              <a class="button button-outline" id="detail-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Visit public site ↗</a>
             </div>
-
-            <div class="catalog-loading" id="detail-loading" role="status" hidden>
-              <span class="loader" aria-hidden="true"></span>
-              <span>Loading accepted history and compatible growth.</span>
-            </div>
-            <div class="notice notice-error" id="detail-error" role="alert" hidden>
-              <div>
-                <strong>Source detail is temporarily unavailable.</strong>
-                <span id="detail-error-message">The API could not complete this view.</span>
-              </div>
-            </div>
-
+            <div class="panel-loading" id="detail-loading" role="status" hidden><span class="loader" aria-hidden="true"></span><span>Loading accepted history and compatible growth…</span></div>
+            <div class="notice notice-error" id="detail-error" role="alert" hidden><div><strong>Source detail is temporarily unavailable.</strong><span id="detail-error-message">The API could not complete this view.</span></div></div>
             <div id="detail-content" hidden>
               <div class="detail-metrics">
-                <article class="detail-metric">
-                  <span>Latest total</span>
-                  <strong id="detail-total">—</strong>
-                  <small id="detail-total-note">No accepted count</small>
-                </article>
-                <article class="detail-metric">
-                  <span>Daily pace</span>
-                  <strong id="detail-pace">—</strong>
-                  <small id="detail-pace-note">Requires compatible history</small>
-                </article>
-                <article class="detail-metric">
-                  <span>Net change</span>
-                  <strong id="detail-delta">—</strong>
-                  <small id="detail-delta-note">Between the latest pair</small>
-                </article>
+                <article><span>Latest total</span><strong id="detail-total">—</strong><small id="detail-total-note">No accepted count</small></article>
+                <article><span>Daily pace</span><strong id="detail-pace">—</strong><small id="detail-pace-note">Requires compatible history</small></article>
+                <article><span>Net change</span><strong id="detail-delta">—</strong><small id="detail-delta-note">Between the latest pair</small></article>
               </div>
-
               <div class="history-layout">
                 <div class="history-visual">
-                  <div class="history-heading">
-                    <div>
-                      <p class="section-kicker">Exact observations</p>
-                      <h3>Snapshot history</h3>
-                    </div>
-                    <span id="history-count">0 observations</span>
-                  </div>
-                  <div class="history-chart" id="history-chart" role="img" aria-label="Snapshot history">
-                    <div class="history-building" id="history-building">
-                      <span class="history-radar" aria-hidden="true"></span>
-                      <strong>Building history</strong>
-                      <p>More trend data will appear as accepted observations accumulate.</p>
-                    </div>
-                  </div>
+                  <div class="history-heading"><div><p class="section-kicker">Exact observations</p><h3>Snapshot history</h3></div><span id="history-count">0 observations</span></div>
+                  <div class="history-chart" id="history-chart" role="img" aria-label="Snapshot history"></div>
                 </div>
-                <div class="history-table-wrap">
-                  <div class="notice notice-compact" id="history-empty" role="status" hidden>
-                    <div>
-                      <strong>No history available.</strong>
-                      <span>This source does not have an accepted snapshot yet.</span>
-                    </div>
-                  </div>
-                  <div class="table-shell" id="history-results">
-                    <table>
-                      <caption id="history-caption">Accepted source observations, newest first</caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Captured</th>
-                          <th scope="col">Total posts</th>
-                          <th scope="col">Evidence</th>
-                        </tr>
-                      </thead>
-                      <tbody id="history-body"></tbody>
-                    </table>
-                  </div>
+                <div class="history-table-panel">
+                  <div class="notice notice-compact" id="history-empty" role="status" hidden><div><strong>No history available.</strong><span>This source does not have an accepted snapshot yet.</span></div></div>
+                  <div class="data-table-wrap" id="history-results"><table class="data-table"><caption id="history-caption">Accepted source observations, newest first</caption><thead><tr><th scope="col">Captured</th><th scope="col">Total posts</th><th scope="col">Evidence</th></tr></thead><tbody id="history-body"></tbody></table></div>
                 </div>
               </div>
             </div>
           </section>
+        </section>
 
-          <div class="compare-inline" aria-live="polite">
-            <div id="compare-empty" role="status" hidden></div>
-            <div class="catalog-loading" id="compare-loading" role="status" hidden>
-              <span class="loader" aria-hidden="true"></span>
-              <span>Loading compatible comparison data…</span>
-            </div>
-            <div class="notice notice-error" id="compare-error" role="alert" hidden>
-              <div>
-                <strong>Comparison is temporarily unavailable.</strong>
-                <span id="compare-error-message">The selected sources could not be compared.</span>
-              </div>
-            </div>
-            <div class="table-shell" id="compare-results" hidden>
-              <table>
-                <caption>Latest public metadata for the selected boorus</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Source</th><th scope="col">Total posts</th><th scope="col">Evidence</th>
-                    <th scope="col">Daily pace</th><th scope="col">Net change</th><th scope="col">Latest capture</th>
-                  </tr>
-                </thead>
-                <tbody id="compare-body"></tbody>
-              </table>
+        <section class="section activity-section shell" id="activity" aria-labelledby="activity-title">
+          <div class="activity-heading"><div><p class="section-kicker">Ecosystem activity</p><h2 id="activity-title">History is accumulating</h2><p id="history-status-copy">Accepted observations are collected over time. More longitudinal analysis will appear as trustworthy history accumulates.</p></div><span class="activity-policy">Exact observations only</span></div>
+          <div class="activity-empty" role="img" aria-label="Ecosystem history is accumulating">
+            <div class="activity-radar" aria-hidden="true"><span></span></div>
+            <div><strong id="history-status-title">Building trustworthy history</strong><p>BooruRadar does not fabricate an ecosystem-wide trend line. Open a ranked source to inspect its accepted observations and measured latest pair.</p><button class="text-button" id="activity-explore" type="button">Explore source history →</button></div>
+          </div>
+        </section>
+
+        <section class="methodology-section" id="methodology" aria-labelledby="methodology-title">
+          <div class="shell methodology-layout">
+            <div class="methodology-heading"><p class="section-kicker section-kicker-dark">Measurement quality</p><h2 id="methodology-title">Metrics you can inspect, not just trust.</h2><p>Every public value carries its evidence class. Missing or incompatible history stays visible instead of becoming a convenient zero.</p><a class="text-link text-link-light" href="/docs">View API methodology →</a></div>
+            <div class="methodology-items">
+              <article><span class="provenance-badge provenance-observed">Observed</span><h3>Direct source reporting</h3><p>Reported directly by a supported public source.</p></article>
+              <article><span class="provenance-badge provenance-estimated">Estimated</span><h3>Transparent derivation</h3><p>Derived from available public evidence without hiding its class.</p></article>
+              <article><span class="provenance-badge provenance-owner-verified">Owner verified</span><h3>Verified measurement class</h3><p>Reserved for measurements verified by a source owner.</p></article>
+              <article><span class="methodology-icon" aria-hidden="true">◇</span><h3>Metadata only</h3><p>BooruRadar monitors aggregate metadata and never mirrors booru media.</p></article>
             </div>
           </div>
         </section>
 
-        <section class="section shell capability-section" aria-labelledby="capability-title">
-          <div class="section-heading centered-heading visually-hidden">
-            <div>
-              <p class="section-kicker">Scan · Discover · Track</p>
-              <h2 id="capability-title">A clearer view of a scattered ecosystem</h2>
-            </div>
-            <p>Focused on the public metadata people need to understand booru communities.</p>
+        <section class="section principles-section shell" aria-labelledby="principles-title">
+          <div class="principles-heading"><p class="section-kicker">Scan · Discover · Track</p><h2 id="principles-title">A clearer view of a scattered ecosystem</h2></div>
+          <div class="principles-grid">
+            <article><span>01</span><h3>Scan public metadata</h3><p>Collect bounded statistics and evidence without downloading media.</p></article>
+            <article><span>02</span><h3>Discover communities</h3><p>Compare scale, growth and coverage across supported public boorus.</p></article>
+            <article><span>03</span><h3>Track honest history</h3><p>Keep observations auditable and incompatible history explicitly unavailable.</p></article>
           </div>
-          <div class="capability-grid">
-            <article class="capability-card">
-              <span class="capability-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"></circle><circle cx="24" cy="24" r="8"></circle><path d="M24 7v8M41 24h-8M24 41v-8M7 24h8"></path><path d="m24 24 11-11"></path></svg>
-              </span>
-              <div><h3>Scan</h3><p>Collect bounded public metadata from supported boorus without downloading media.</p></div>
-            </article>
-            <article class="capability-card">
-              <span class="capability-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><circle cx="21" cy="21" r="12"></circle><path d="m30 30 10 10"></path><path d="M17 21h8M21 17v8"></path></svg>
-              </span>
-              <div><h3>Discover</h3><p>Explore tracked communities and inspect their latest accepted observations.</p></div>
-            </article>
-            <article class="capability-card">
-              <span class="capability-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48"><path d="M8 39h32"></path><path d="M11 33V21M21 33V11M31 33V25M41 33V16"></path><path d="m10 17 10-7 10 10 11-9"></path></svg>
-              </span>
-              <div><h3>Track</h3><p>Follow compatible changes over time and keep missing history explicit.</p></div>
-            </article>
-          </div>
-        </section>
-
-        <section class="section shell analytics-section" aria-labelledby="analytics-title">
-          <article class="analytics-history">
-            <div class="analytics-panel-heading">
-              <div><p class="section-kicker">Ecosystem overview</p><h2 id="analytics-title">Building history</h2></div>
-              <span>Exact observations only</span>
-            </div>
-            <div class="analytics-chart" role="img" aria-label="Ecosystem history is still being built from exact observations">
-              <span class="analytics-radar" aria-hidden="true"></span>
-              <div><strong id="history-status-title">Building history</strong><p id="history-status-copy">The catalog is loading its latest accepted observations.</p></div>
-            </div>
-          </article>
-
-          <div class="analytics-metrics" aria-label="Real public catalog metrics">
-            <article><span>Tracked boorus</span><strong id="analytics-tracked">—</strong><small>Enabled public sources</small></article>
-            <article><span>Reporting sources</span><strong id="analytics-reporting">—</strong><small>Accepted latest snapshot</small></article>
-            <article><span>Latest observation</span><strong id="analytics-latest">—</strong><small id="analytics-latest-note">Waiting for data</small></article>
-            <article><span>Metric provenance</span><strong>Explicit</strong><small>Observed and estimated stay distinct</small></article>
-          </div>
-
-          <aside class="trust-card" id="methodology" aria-labelledby="trust-title">
-            <div class="trust-card-heading"><span class="trust-shield" aria-hidden="true">◇</span><div><p class="section-kicker">Methodology</p><h2 id="trust-title">Why trust BooruRadar?</h2></div></div>
-            <ul>
-              <li><span aria-hidden="true">◎</span><div><strong>Transparent metrics</strong><small>Observed values and estimates remain distinguished.</small></div></li>
-              <li><span aria-hidden="true">◇</span><div><strong>Metadata only</strong><small>No booru image mirroring or media proxying.</small></div></li>
-              <li><span aria-hidden="true">⌘</span><div><strong>Open source</strong><small>Methodology and code are public.</small></div></li>
-              <li><span aria-hidden="true">↗</span><div><strong>History over hype</strong><small>Missing history remains missing.</small></div></li>
-            </ul>
-          </aside>
         </section>
       </div>
-
-      <noscript>
-        <div class="noscript-notice">
-          Live catalog data requires JavaScript. Product information, methodology, API
-          documentation, and the open-source repository remain available above.
-        </div>
-      </noscript>
+      <noscript><div class="noscript-notice">Live ranking data requires JavaScript. Methodology, API documentation and the open-source repository remain available.</div></noscript>
     </main>
 
     <footer class="site-footer">
       <div class="shell footer-grid">
-        <div class="footer-brand">
-          <a class="brand" href="#top" aria-label="BooruRadar home">
-            <span class="radar-mark" aria-hidden="true"><span></span></span>
-            <span class="wordmark">Booru<span>Radar</span></span>
-          </a>
-          <p>Scan. Discover. Track.<br>Public metadata across the booru ecosystem.</p>
-        </div>
-        <div class="footer-links">
-          <div><strong>Product</strong><a href="#explore">Explore</a><a href="#compare">Compare</a><a href="/docs">API</a></div>
-          <div><strong>Project</strong><a href="#methodology">Methodology</a><a href="https://github.com/DiogoSS0/BooruRadar" target="_blank" rel="noopener noreferrer">GitHub</a></div>
-        </div>
+        <div class="footer-brand"><a class="brand" href="#top" aria-label="BooruRadar home"><span class="radar-mark" aria-hidden="true"><span></span></span><span class="wordmark">Booru<span>Radar</span></span></a><p>Scan. Discover. Track.<br>Public metadata across the booru ecosystem.</p></div>
+        <div class="footer-links"><div><strong>Product</strong><a href="#ecosystem">Explore</a><a href="#rankings">Rankings</a><a href="#compare">Compare</a></div><div><strong>Resources</strong><a href="#methodology">Methodology</a><a href="/docs">API</a><a href="https://github.com/DiogoSS0/BooruRadar" target="_blank" rel="noopener noreferrer">GitHub</a></div></div>
       </div>
-      <div class="shell footer-bottom">
-        <span>BooruRadar is an open-source, metadata-only project.</span>
-        <a href="#top">Back to top ↑</a>
-      </div>
+      <div class="shell footer-bottom"><span>BooruRadar is an open-source, metadata-only project.</span><a href="#top">Back to top ↑</a></div>
     </footer>
   </body>
 </html>

@@ -56,12 +56,17 @@ def test_homepage_is_public_product_html_with_real_destinations() -> None:
     assert 'href="/assets/styles.css"' in response.text
     assert 'src="/assets/app.js"' in response.text
     assert 'src="/assets/booruradar-mascot.png"' in response.text
-    assert 'alt="BooruRadar mascot holding a scanner and pointing ahead"' in response.text
+    assert 'alt="BooruRadar mascot holding a scanner and pointing toward the rankings"' in response.text
     assert 'href="/docs"' in response.text
     assert 'href="https://github.com/DiogoSS0/BooruRadar"' in response.text
-    assert 'id="catalog-empty"' in response.text
-    assert 'id="catalog-error"' in response.text
-    assert "Live ecosystem data is temporarily unavailable." in response.text
+    assert 'id="ranking-panel"' in response.text
+    assert 'id="ranking-loading"' in response.text
+    assert 'id="ranking-empty"' in response.text
+    assert 'id="ranking-error"' in response.text
+    assert 'id="ranking-body"' in response.text
+    assert 'id="ranking-pagination"' in response.text
+    assert '<table class="ranking-table">' in response.text
+    assert "Ranking data temporarily unavailable." in response.text
     assert request("/", method="POST").status_code == 405
 
 
@@ -78,7 +83,9 @@ def test_homepage_contains_no_mockup_metrics_or_external_booru_media() -> None:
         "media_asset",
     ):
         assert unsafe_media_reference not in response.text
-    assert "/api/v1/rankings" not in response.text
+    assert 'data-ranking-mode="largest"' in response.text
+    assert 'data-ranking-mode="fastest_growth"' in response.text
+    assert 'data-ranking-mode="relative_growth"' in response.text
     assert "newsletter" not in response.text.lower()
     assert "Privacy Policy" not in response.text
     assert "Terms of Service" not in response.text
@@ -102,12 +109,11 @@ def test_homepage_assets_are_local_fixed_responses() -> None:
     assert script.headers["content-type"].startswith("text/javascript")
     assert script.headers["cache-control"] == "public, max-age=3600"
     assert_security_headers(script)
-    assert '"/api/v1/boorus?limit=100&offset=0"' in script.text
+    assert "`/api/v1/rankings?${query.toString()}`" in script.text
     assert "`/api/v1/boorus/${encodedId}`" in script.text
     assert "`/api/v1/boorus/${encodedId}/snapshots?limit=30`" in script.text
     assert "`/api/v1/boorus/${encodedId}/growth`" in script.text
     assert "`/api/v1/compare?${query.toString()}`" in script.text
-    assert "/api/v1/rankings" not in script.text
     assert "aggregatePosts" not in script.text
     assert "innerHTML" not in script.text
     assert "https://" not in script.text
@@ -122,6 +128,64 @@ def test_homepage_assets_are_local_fixed_responses() -> None:
     assert len(mascot.content) > 100_000
 
     assert missing.status_code == 404
+
+
+def test_ranking_frontend_preserves_backend_order_rank_and_pagination() -> None:
+    script = request("/assets/app.js").text
+    render_ranking = script.split("function renderRanking(payload)", maxsplit=1)[1].split(
+        "function updateEcosystemSnapshot()", maxsplit=1
+    )[0]
+
+    assert "API order and rank are canonical" in render_ranking
+    assert "payload.items.map(createRankingRow)" in render_ranking
+    assert ".sort(" not in render_ranking
+    assert "`#${item.rank}`" in script
+    assert "state.rankingOffset += RANKING_LIMIT" in script
+    assert "offset: String(offset)" in script
+    assert "item.rank" in script
+
+
+def test_ranking_frontend_keeps_unavailable_distinct_from_zero() -> None:
+    script = request("/assets/app.js").text
+
+    for reason in (
+        "missing_total_posts",
+        "invalid_total_posts",
+        "insufficient_history",
+        "incompatible_provenance",
+        "incompatible_unit",
+        "invalid_time_interval",
+        "zero_baseline",
+    ):
+        assert reason in script
+    assert 'Object.hasOwn(item, field)' in script
+    assert '"No numeric substitute"' in script
+    assert "value || 0" not in script
+    assert "normalized === 0" not in script
+
+
+def test_ranking_frontend_uses_api_metrics_without_formula_duplication() -> None:
+    script = request("/assets/app.js").text
+
+    assert 'item.unit === "posts/day"' in script
+    assert 'item.unit === "posts"' in script
+    assert "previous_total_posts" not in script
+    assert "posts_per_day /" not in script
+    assert "posts_delta /" not in script
+    assert "relative_growth =" not in script
+
+
+def test_ranking_frontend_exposes_provenance_and_accessible_states() -> None:
+    page = request("/").text
+    script = request("/assets/app.js").text
+
+    for provenance in ("observed", "estimated", "owner_verified"):
+        assert provenance in script
+    assert 'href = "#methodology"' in script
+    assert 'role="tablist"' in page
+    assert 'role="tabpanel"' in page
+    assert 'aria-live="polite"' in page
+    assert 'id="ranking-retry"' in page
 
 
 def test_docs_and_openapi_remain_available() -> None:
