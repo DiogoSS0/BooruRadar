@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from xml.etree import ElementTree
 
 import httpx
 
@@ -51,12 +53,12 @@ def test_homepage_is_public_product_html_with_real_destinations() -> None:
     assert response.headers["cache-control"] == "no-cache"
     assert_security_headers(response)
     assert "BooruRadar" in response.text
-    assert "Discover what’s happening across the booru ecosystem." in response.text
+    assert "The booru ecosystem,<br> at a glance." in response.text
     assert response.text.count("<h1") == 1
-    assert 'href="/assets/styles.css?v=ranking-v1"' in response.text
-    assert 'src="/assets/app.js?v=ranking-v1"' in response.text
+    assert 'href="/assets/styles.css?v=editorial-v1"' in response.text
+    assert 'src="/assets/app.js?v=editorial-v1"' in response.text
     assert 'src="/assets/booruradar-mascot.png"' in response.text
-    assert 'alt="BooruRadar mascot holding a scanner and pointing toward the rankings"' in response.text
+    assert 'alt="BooruRadar mascot holding a scanner"' in response.text
     assert 'href="/docs"' in response.text
     assert 'href="https://github.com/DiogoSS0/BooruRadar"' in response.text
     assert 'id="ranking-panel"' in response.text
@@ -102,7 +104,10 @@ def test_homepage_assets_are_local_fixed_responses() -> None:
     assert stylesheet.headers["cache-control"] == "public, max-age=3600"
     assert_security_headers(stylesheet)
     assert "@import" not in stylesheet.text
-    assert "url(" not in stylesheet.text
+    # Font loading is local; external assets remain disallowed.
+    assert re.findall(r"url\(['\"]?([^)'\"]+)", stylesheet.text) == [
+        "/assets/manrope-latin.woff2"
+    ]
     assert "prefers-reduced-motion" in stylesheet.text
 
     assert script.status_code == 200
@@ -128,6 +133,39 @@ def test_homepage_assets_are_local_fixed_responses() -> None:
     assert len(mascot.content) > 100_000
 
     assert missing.status_code == 404
+
+
+def test_identity_assets_are_self_hosted_and_font_policy_is_scoped() -> None:
+    page = request("/")
+    assert "font-src 'self';" in page.headers["content-security-policy"]
+    assert "style-src 'self';" in page.headers["content-security-policy"]
+    for filename in ("booruradar-wordmark.svg", "booruradar-icon.svg"):
+        response = request(f"/assets/{filename}")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/svg+xml")
+        assert_security_headers(response)
+        svg = ElementTree.fromstring(response.content)
+        assert svg.tag == "{http://www.w3.org/2000/svg}svg"
+        assert svg.find(".//{http://www.w3.org/2000/svg}path") is not None
+        assert 'href="http' not in response.text
+        assert "<script" not in response.text
+    font = request("/assets/manrope-latin.woff2")
+    assert font.status_code == 200
+    assert font.headers["content-type"] == "font/woff2"
+    assert font.content.startswith(b"wOF2")
+    assert_security_headers(font)
+    assert 'as="font" type="font/woff2" crossorigin' in page.text
+
+
+def test_frontend_bindings_and_local_anchors_resolve_after_relayout() -> None:
+    page = request("/").text
+    script = request("/assets/app.js").text
+    ids = re.findall(r'\bid="([^"]+)"', page)
+    assert len(ids) == len(set(ids))
+    for identifier in re.findall(r'document.querySelector\("#([^" ]+)"\)', script):
+        assert identifier in ids, identifier
+    for anchor in re.findall(r'href="#([^" ]+)"', page):
+        assert anchor in ids, anchor
 
 
 def test_ranking_frontend_preserves_backend_order_rank_and_pagination() -> None:

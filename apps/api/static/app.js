@@ -83,9 +83,7 @@ const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "aut
 const elements = {
   navToggle: document.querySelector("#nav-toggle"),
   primaryNav: document.querySelector("#primary-nav"),
-  heroStatus: document.querySelector(".hero-status"),
-  heroSourceCount: document.querySelector("#hero-source-count"),
-  heroLatestState: document.querySelector("#hero-latest-state"),
+  connectionStatus: document.querySelector(".ranking-freshness"),
   rankingConnectionLabel: document.querySelector("#ranking-connection-label"),
   ecosystemMetrics: document.querySelector("#ecosystem-metrics"),
   snapshotLargestName: document.querySelector("#snapshot-largest-name"),
@@ -169,6 +167,10 @@ class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+function preferredScrollBehavior() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
 function createElement(tagName, className, text) {
@@ -331,7 +333,7 @@ function setNavigationOpen(open) {
 }
 
 function setConnectionState(kind, label) {
-  elements.heroStatus.dataset.state = kind;
+  elements.connectionStatus.dataset.state = kind;
   elements.rankingConnectionLabel.textContent = label;
   elements.rankingFreshness.textContent = label;
 }
@@ -421,7 +423,7 @@ function createRankingMetricCell(item) {
     return cell;
   }
   const metric = rankingMetric(item);
-  const wrapper = createElement("div", `ranking-metric ${numberTone(item.value)}`);
+  const wrapper = createElement("div", `ranking-metric ${item.unit === "posts" ? "number-neutral" : numberTone(item.value)}`);
   const value = createElement("strong", null, metric.primary);
   value.title = metric.exact;
   wrapper.append(value, createElement("span", null, metric.unit));
@@ -533,7 +535,6 @@ function updateEcosystemSnapshot() {
   const largestItem = largest?.items.find((item) => item.eligible) || null;
   const growthItem = growth?.items.find((item) => item.eligible) || null;
   elements.snapshotTracked.textContent = countSource ? formatNumber(countSource.total) : "—";
-  elements.heroSourceCount.textContent = countSource ? `${formatNumber(countSource.total)} tracked ${countSource.total === 1 ? "source" : "sources"}` : "Ranking data unavailable";
 
   if (largestItem) {
     elements.snapshotLargestName.textContent = largestItem.name;
@@ -551,19 +552,18 @@ function updateEcosystemSnapshot() {
   }
   if (growth) {
     elements.snapshotEligible.textContent = `${formatNumber(growth.eligible_count)} / ${formatNumber(growth.total)}`;
-    elements.snapshotEligibleNote.textContent = growth.eligible_count === 1 ? "Source with a compatible latest pair" : "Sources with compatible latest pairs";
+    elements.snapshotEligibleNote.textContent = "Sources with comparable history";
   } else {
     elements.snapshotEligible.textContent = "—";
     elements.snapshotEligibleNote.textContent = "Coverage unavailable";
   }
   if (largest) {
-    elements.historyStatusTitle.textContent = "Building trustworthy history";
-    elements.historyStatusCopy.textContent = `${largest.eligible_count} of ${largest.total} tracked sources currently have a rankable latest total. Ecosystem-wide history will appear only when it can be represented without fabrication.`;
+    elements.historyStatusTitle.textContent = "History is taking shape";
+    elements.historyStatusCopy.textContent = `${largest.eligible_count} of ${largest.total} sources have a rankable total. Open a source to explore its observations; an ecosystem-wide history is not available yet.`;
   } else {
     elements.historyStatusTitle.textContent = "History view unavailable";
-    elements.historyStatusCopy.textContent = "The static methodology remains available while the ranking connection recovers.";
+    elements.historyStatusCopy.textContent = "Source history will return when the connection recovers. You can still read about the measurements below.";
   }
-  elements.heroLatestState.textContent = countSource ? "Ranking API connected" : "Static methodology available";
   elements.ecosystemMetrics.setAttribute("aria-busy", "false");
 }
 
@@ -585,7 +585,7 @@ async function loadRanking() {
     if (mode === "fastest_growth" && offset === 0) state.summaryGrowth = payload;
     renderRanking(payload);
     updateEcosystemSnapshot();
-    setConnectionState("online", "Live API data");
+    setConnectionState("online", "Connected to source data");
   } catch (error) {
     if (error.name === "AbortError") return;
     const message = error instanceof Error ? error.message : "The ranking could not be loaded.";
@@ -682,7 +682,7 @@ async function runComparison() {
   const controller = new AbortController();
   state.compareController = controller;
   setCompareView("loading");
-  elements.comparePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  elements.comparePanel.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
   const query = new URLSearchParams();
   state.comparisonIds.forEach((id) => query.append("booru_id", id));
   try {
@@ -747,9 +747,7 @@ function renderHistoryChart(snapshots) {
   elements.historyChart.replaceChildren();
   if (observations.length < 2) {
     const building = createElement("div", "history-building");
-    const radar = createElement("span", "history-radar");
-    radar.setAttribute("aria-hidden", "true");
-    building.append(radar, createElement("strong", null, "Building history"), createElement("p", null, observations.length ? "One accepted observation is available. A trend requires compatible history." : "More trend data will appear as accepted observations accumulate."));
+    building.append(createElement("strong", null, "Building history"), createElement("p", null, observations.length ? "One accepted observation is available. A trend requires compatible history." : "More trend data will appear as accepted observations accumulate."));
     elements.historyChart.append(building);
     elements.historyChart.setAttribute("aria-label", "Building snapshot history");
     return;
@@ -834,7 +832,7 @@ async function openDetail(booruId, returnFocus = null) {
   elements.detailTitle.textContent = "Loading source";
   elements.detailFamily.textContent = "Reading accepted public data";
   setDetailView("loading");
-  elements.detailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  elements.detailPanel.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
   const encodedId = encodeURIComponent(booruId);
   try {
     const [booru, snapshots, growth] = await Promise.all([
@@ -865,7 +863,7 @@ function closeDetail() {
   state.detailController?.abort();
   elements.detailPanel.hidden = true;
   if (state.detailReturnFocus?.isConnected) state.detailReturnFocus.focus({ preventScroll: true });
-  document.querySelector("#rankings-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelector("#rankings-title")?.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
 }
 
 elements.navToggle.addEventListener("click", () => setNavigationOpen(elements.navToggle.getAttribute("aria-expanded") !== "true"));
@@ -888,13 +886,13 @@ elements.rankingPrevious.addEventListener("click", () => {
   if (!state.rankingPayload || state.rankingOffset === 0) return;
   state.rankingOffset = Math.max(0, state.rankingOffset - RANKING_LIMIT);
   loadRanking();
-  document.querySelector("#rankings-title").scrollIntoView({ behavior: "smooth" });
+  document.querySelector("#rankings-title").scrollIntoView({ behavior: preferredScrollBehavior() });
 });
 elements.rankingNext.addEventListener("click", () => {
   if (!state.rankingPayload || state.rankingOffset + state.rankingPayload.items.length >= state.rankingPayload.total) return;
   state.rankingOffset += RANKING_LIMIT;
   loadRanking();
-  document.querySelector("#rankings-title").scrollIntoView({ behavior: "smooth" });
+  document.querySelector("#rankings-title").scrollIntoView({ behavior: preferredScrollBehavior() });
 });
 elements.compareButton.addEventListener("click", runComparison);
 elements.compareClose.addEventListener("click", closeComparison);
@@ -902,7 +900,7 @@ elements.detailClose.addEventListener("click", closeDetail);
 elements.activityExplore.addEventListener("click", () => {
   const source = state.rankingPayload?.items[0] || state.summaryLargest?.items[0];
   if (source) openDetail(source.booru_id, elements.activityExplore);
-  else document.querySelector("#rankings-title").scrollIntoView({ behavior: "smooth" });
+  else document.querySelector("#rankings-title").scrollIntoView({ behavior: preferredScrollBehavior() });
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.navToggle.getAttribute("aria-expanded") === "true") {
@@ -911,7 +909,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("resize", () => {
-  if (window.innerWidth > 900) setNavigationOpen(false);
+  if (window.innerWidth > 540) setNavigationOpen(false);
 });
 
 setActiveRankingMode(state.rankingMode);

@@ -33,7 +33,7 @@ booruradar-worker = "apps.worker.main:main"
 include = ["apps*", "booruradar*"]
 
 [tool.setuptools.package-data]
-"apps.api" = ["static/*.css", "static/*.html", "static/*.js", "static/assets/*.png"]
+"apps.api" = ["static/*.css", "static/*.html", "static/*.js", "static/assets/*.png", "static/assets/*.svg", "static/assets/*.woff2", "static/assets/*.txt"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
