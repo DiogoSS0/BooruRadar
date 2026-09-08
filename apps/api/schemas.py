@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from booruradar.core.enums import MetricProvenance
+from booruradar.discovery import Category, ContentRating
 from booruradar.services.catalog import (
     GrowthUnavailableReason,
     RankingIneligibleReason,
@@ -28,6 +29,29 @@ class SnapshotResponse(ApiSchema):
     booru_id: uuid.UUID
     captured_at: datetime
     total_posts: TotalPostsResponse | None
+    source_url: str | None = None
+
+
+class SourceClassificationResponse(ApiSchema):
+    content_rating: ContentRating
+    categories: tuple[Category, ...]
+    reference_urls: tuple[str, ...]
+    reviewed_at: date
+    subset_of: str | None
+    basis: Literal["editorial"] = "editorial"
+
+
+class CategoryResponse(ApiSchema):
+    key: Category
+    label: str
+
+
+class CategoryListResponse(ApiSchema):
+    items: list[CategoryResponse]
+    description: str = (
+        "Editorial community categories, not post-level tags or measured counts. "
+        "Safe means exclusively Safe; NSFW includes mixed communities accepting adult content."
+    )
 
 
 class BooruResponse(ApiSchema):
@@ -37,6 +61,7 @@ class BooruResponse(ApiSchema):
     adapter_family: str
     adapter_name: str | None
     latest_snapshot: SnapshotResponse | None
+    classification: SourceClassificationResponse | None = None
 
 
 class BooruListResponse(ApiSchema):
@@ -92,6 +117,7 @@ class RankingIdentityResponse(ApiSchema):
     canonical_url: str
     adapter_family: str
     adapter_name: str | None
+    classification: SourceClassificationResponse | None = None
 
 
 class RankingIneligibleResponse(RankingIdentityResponse):
@@ -108,6 +134,7 @@ class LargestRankingEligibleResponse(RankingIdentityResponse):
     provenance: MetricProvenance
     latest_snapshot_id: uuid.UUID
     latest_captured_at: datetime
+    source_url: str | None = None
 
 
 class GrowthRankingEligibleResponse(RankingIdentityResponse):
@@ -123,6 +150,7 @@ class GrowthRankingEligibleResponse(RankingIdentityResponse):
     elapsed_hours: Annotated[float, Field(gt=0, allow_inf_nan=False)]
     posts_delta: int
     posts_delta_unit: Literal["posts"] = "posts"
+    source_url: str | None = None
 
 
 LargestRankingItemResponse = Annotated[

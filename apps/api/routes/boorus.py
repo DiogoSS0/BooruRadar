@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.schemas import (
     BooruListResponse,
     BooruResponse,
+    CategoryListResponse,
+    CategoryResponse,
     ComparisonItemResponse,
     ComparisonResponse,
     FastestGrowthRankingResponse,
@@ -22,6 +24,7 @@ from apps.api.schemas import (
     SnapshotResponse,
 )
 from booruradar.core.database import get_session
+from booruradar.discovery import CATEGORY_LABELS, CatalogFilters, Category, CategoryMatch, ContentRating
 from booruradar.services.catalog import (
     CatalogNotFoundError,
     CatalogReadService,
@@ -41,6 +44,27 @@ async def get_catalog_service(
 
 
 CatalogService = Annotated[CatalogReadService, Depends(get_catalog_service)]
+
+
+async def get_catalog_filters(
+    q: Annotated[str, Query(max_length=100, description="Case-insensitive community name or domain search.")] = "",
+    content_rating: Annotated[ContentRating | None, Query(description="safe: exclusively Safe communities; nsfw: includes mixed communities accepting adult content.")] = None,
+    category: Annotated[list[Category] | None, Query(max_length=10, description="Repeat to include community categories.")] = None,
+    exclude_category: Annotated[list[Category] | None, Query(max_length=10, description="Exclude communities matching any of these categories.")] = None,
+    category_match: Annotated[CategoryMatch, Query(description="Require all or any included categories. Exclusions always apply.")] = CategoryMatch.ALL,
+) -> CatalogFilters:
+    return CatalogFilters(q=q, content_rating=content_rating, category=tuple(category or ()),
+                          exclude_category=tuple(exclude_category or ()), category_match=category_match)
+
+
+DiscoveryFilters = Annotated[CatalogFilters, Depends(get_catalog_filters)]
+
+
+@router.get("/categories", response_model=CategoryListResponse,
+            summary="List supported editorial community categories")
+async def list_categories() -> CategoryListResponse:
+    return CategoryListResponse(items=[CategoryResponse(key=key, label=label)
+                                       for key, label in CATEGORY_LABELS.items()])
 
 
 def _not_found(error: CatalogNotFoundError) -> HTTPException:
@@ -71,11 +95,12 @@ def _ranking_response(record: RankingResult) -> RankingResponse:
 )
 async def list_rankings(
     service: CatalogService,
+    filters: DiscoveryFilters,
     mode: RankingMode = RankingMode.LARGEST,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
 ) -> RankingResponse:
-    record = await service.rank_boorus(mode=mode, limit=limit, offset=offset)
+    record = await service.rank_boorus(mode=mode, limit=limit, offset=offset, filters=filters)
     return _ranking_response(record)
 
 
@@ -86,10 +111,11 @@ async def list_rankings(
 )
 async def list_boorus(
     service: CatalogService,
+    filters: DiscoveryFilters,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
 ) -> BooruListResponse:
-    records = await service.list_boorus(limit=limit, offset=offset)
+    records = await service.list_boorus(limit=limit, offset=offset, filters=filters)
     return BooruListResponse(
         items=[BooruResponse.model_validate(record) for record in records],
         limit=limit,

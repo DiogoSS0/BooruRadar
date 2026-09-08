@@ -9,8 +9,8 @@
     <title>BooruRadar · Public booru rankings</title>
     <link rel="icon" href="/assets/booruradar-icon.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/assets/styles.css?v=editorial-v1">
-    <script type="module" src="/assets/app.js?v=editorial-v1"></script>
+    <link rel="stylesheet" href="/assets/styles.css?v=discovery-v2">
+    <script type="module" src="/assets/app.js?v=discovery-v2"></script>
   </head>
   <body>
     <a class="skip-link" href="#rankings">Skip to rankings</a>
@@ -64,6 +64,22 @@
           </div>
           <p class="visually-hidden" id="ranking-connection" role="status" aria-live="polite"><span id="ranking-connection-label">Connecting to the public API</span></p>
 
+          <form class="discovery-filters" id="discovery-filters" role="search" aria-label="Find booru communities">
+            <div class="discovery-search-row">
+              <label class="discovery-search">Find a community<input id="discovery-query" type="search" name="q" maxlength="100" placeholder="Search name or domain" autocomplete="off"></label>
+              <label>Content<select id="discovery-rating" name="content_rating" aria-describedby="discovery-help"><option value="">All</option><option value="safe">Safe only</option><option value="nsfw">NSFW</option></select></label>
+              <button class="text-button" id="discovery-clear" type="button">Clear filters</button>
+            </div>
+            <fieldset class="category-fieldset"><legend>Categories</legend><div class="category-options" id="discovery-categories" aria-busy="true"></div></fieldset>
+            <details class="discovery-advanced" id="discovery-advanced">
+              <summary>Advanced filters</summary>
+              <label class="category-match-label">Match included categories<select id="discovery-match"><option value="all">All selected categories</option><option value="any">Any selected category</option></select></label>
+              <fieldset class="category-fieldset"><legend>Exclude categories</legend><div class="category-options" id="discovery-exclusions"></div></fieldset>
+            </details>
+            <p class="discovery-help" id="discovery-help">Filters describe communities. Safe excludes mixed communities; NSFW includes communities accepting adult content. Ranks stay global.</p>
+            <div class="notice notice-error" id="discovery-error" role="alert" hidden><span>Categories could not be loaded.</span><button class="text-button" id="discovery-retry" type="button">Retry categories</button></div>
+          </form>
+
           <div class="ranking-toolbar">
             <div class="ranking-tabs" role="tablist" aria-label="Ranking mode">
               <button class="ranking-tab is-active" id="ranking-tab-largest" type="button" role="tab" aria-selected="true" aria-controls="ranking-panel" data-ranking-mode="largest">Largest</button>
@@ -85,7 +101,7 @@
               <div><strong>Ranking data temporarily unavailable.</strong><span id="ranking-error-message">The public API could not be reached.</span></div>
               <button class="button button-outline" id="ranking-retry" type="button">Try again</button>
             </div>
-            <div class="notice" id="ranking-empty" role="status" hidden><div><strong>No tracked sources are available yet.</strong><span>The ranking is connected and ready for the first public source.</span></div></div>
+            <div class="notice" id="ranking-empty" role="status" hidden><div><strong>No communities match this view.</strong><span>Try clearing filters or selecting another combination. Sources appear after their first accepted observation.</span></div></div>
             <div class="ranking-table-wrap" id="ranking-results" hidden>
               <table class="ranking-table">
                 <caption class="visually-hidden" id="ranking-caption">Public booru ranking supplied by the BooruRadar API</caption>
@@ -122,6 +138,8 @@
             <div class="panel-loading" id="detail-loading" role="status" hidden><span class="loader" aria-hidden="true"></span><span>Loading accepted history and compatible growth…</span></div>
             <div class="notice notice-error" id="detail-error" role="alert" hidden><div><strong>Source detail is temporarily unavailable.</strong><span id="detail-error-message">The API could not complete this view.</span></div></div>
             <div id="detail-content" hidden>
+              <div class="detail-classification" id="detail-classification"></div>
+              <a class="text-link" id="detail-measurement-source" target="_blank" rel="noopener noreferrer" hidden>Measurement source ↗</a>
               <div class="detail-metrics">
                 <article><span>Latest total</span><strong id="detail-total">—</strong><small id="detail-total-note">No accepted count</small></article>
                 <article><span>Daily pace</span><strong id="detail-pace">—</strong><small id="detail-pace-note">Requires compatible history</small></article>

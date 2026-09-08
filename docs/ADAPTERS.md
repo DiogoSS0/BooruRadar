@@ -44,6 +44,12 @@ names agree.
 | --- | --- | --- | --- | --- |
 | `danbooru` | `https://danbooru.donmai.us` | `DanbooruAdapter` | `danbooru` | `estimated`, `posts` |
 | `safebooru` | `https://safebooru.org` | `GelbooruAdapter` | `gelbooru` | `observed`, `posts` |
+| `konachan` | `https://konachan.com` | `MoebooruAdapter` | `moebooru` | `observed`, `posts` |
+| `konachan-safe` | `https://konachan.net` | `MoebooruAdapter` | `moebooru` | `observed`, `posts` |
+| `yandere` | `https://yande.re` | `MoebooruAdapter` | `moebooru` | `observed`, `posts` |
+| `e621` | `https://e621.net` | `E621Adapter` | `e621` | `observed`, `posts` |
+| `derpibooru` | `https://derpibooru.org` | `PhilomenaAdapter` | `philomena` | `observed`, `posts` |
+| `aibooru` | `https://aibooru.online` | `DanbooruAdapter` | `danbooru` | `estimated`, `posts` |
 
 The policy also owns the aggregate statistics source URL and chooses which previous
 metric envelope is compatible as an anomaly baseline. A previous value with a
@@ -95,6 +101,37 @@ unknown. Any direct media attributes in the XML are discarded. Recent-post reque
 are capped at 1,000; tag requests are capped at 25 explicit names. When `tag_names`
 is `None`, no tag request is made.
 
-Safebooru collection remains available only through the explicit manual target.
-Any production automation is restricted to `python -m booruradar.collect danbooru`;
-there is no Safebooru cron, generic target fan-out, or systemd timer.
+Safebooru is included in the daily `collect_catalog` one-shot, alongside the six new
+sources. Danbooru keeps its independent collector.
+
+## Aggregate-only adapters
+
+`aggregate.py` contains counter adapters for Moebooru, e621, and Philomena. These
+advertise only detection, health, and public statistics. Health reuses the validated
+count from the current inspection; recent posts and tags are unsupported. A blocked
+source fails once with bounded response evidence. HTTP success alone is insufficient:
+missing, negative, fractional, boolean, or malformed counts are rejected.
+
+- Moebooru: `GET /post.xml?limit=1`, root `<posts count="…">`. Discard post attributes.
+  See [official API documentation](https://konachan.com/help/api).
+- e621: `GET /`, digits inside exactly one `home-footer-counter` HTML element.
+  The source uses cached `Post.fast_count`; reported values may lag by up to 20 hours.
+  Never use `/posts/count.json` as a site total: it caps large results. No digit image
+  is downloaded. See [homepage source](https://github.com/e621ng/e621ng/blob/master/app/views/static/home.html.erb)
+  and [count implementation](https://github.com/e621ng/e621ng/blob/master/app/controllers/posts_controller.rb).
+- Derpibooru: `GET /api/v1/json/search/images?q=*&per_page=1&filter_id=56027`.
+  Extract the integer `total` and discard image objects. The public Everything filter
+  was verified on 2026-09-08 to have no hidden/spoilered tags or hidden complex filter.
+  See [official API documentation](https://derpibooru.org/pages/api).
+- AIBooru: the existing Danbooru adapter and estimated-count policy. Danbooru
+  credentials are never shared with this target.
+
+`targets.py` also owns the editorial classifications and reference URLs. These are
+community-level descriptions, separate from observed/estimated metrics. Unknown
+sources stay unclassified. Konachan Safe declares `subset_of=konachan`; its posts
+overlap with the parent and must not be added to it as unique content.
+
+New rows are created disabled. The collector enables a new source in the same
+transaction that commits its first accepted snapshot; failed normalization or commit
+leaves it unpublished. An already disabled source with accepted history is not
+automatically re-enabled.

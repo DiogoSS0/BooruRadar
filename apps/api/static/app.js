@@ -81,6 +81,18 @@ const dateOnlyFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "mediu
 const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
 const elements = {
+  discoveryForm: document.querySelector("#discovery-filters"),
+  discoveryQuery: document.querySelector("#discovery-query"),
+  discoveryRating: document.querySelector("#discovery-rating"),
+  discoveryCategories: document.querySelector("#discovery-categories"),
+  discoveryExclusions: document.querySelector("#discovery-exclusions"),
+  discoveryMatch: document.querySelector("#discovery-match"),
+  discoveryAdvanced: document.querySelector("#discovery-advanced"),
+  discoveryClear: document.querySelector("#discovery-clear"),
+  discoveryError: document.querySelector("#discovery-error"),
+  discoveryRetry: document.querySelector("#discovery-retry"),
+  detailClassification: document.querySelector("#detail-classification"),
+  detailMeasurementSource: document.querySelector("#detail-measurement-source"),
   navToggle: document.querySelector("#nav-toggle"),
   primaryNav: document.querySelector("#primary-nav"),
   connectionStatus: document.querySelector(".ranking-freshness"),
@@ -148,6 +160,8 @@ const elements = {
 };
 
 const state = {
+  filters: { q: "", content_rating: "", category: [], exclude_category: [], category_match: "all" },
+  categoryLabels: new Map(),
   rankingMode: "largest",
   rankingOffset: 0,
   rankingPayload: null,
@@ -160,6 +174,96 @@ const state = {
   detailController: null,
   detailReturnFocus: null,
 };
+
+const FILTER_KEYS = ["q", "content_rating", "category", "exclude_category", "category_match"];
+let searchTimer;
+
+function appendFilterParams(query, filters) {
+  if (!filters) return;
+  if (filters.q) query.set("q", filters.q);
+  if (filters.content_rating) query.set("content_rating", filters.content_rating);
+  filters.category.forEach((key) => query.append("category", key));
+  filters.exclude_category.forEach((key) => query.append("exclude_category", key));
+  if (filters.category_match !== "all") query.set("category_match", filters.category_match);
+}
+
+function restoreDiscoveryUrl() {
+  const query = new URLSearchParams(window.location.search);
+  state.filters = {
+    q: query.get("q") || "",
+    content_rating: query.get("content_rating") || "",
+    category: [...new Set(query.getAll("category"))],
+    exclude_category: [...new Set(query.getAll("exclude_category"))],
+    category_match: query.get("category_match") || "all",
+  };
+  state.rankingMode = RANKING_MODES[query.get("mode")] ? query.get("mode") : "largest";
+  const offset = Number(query.get("offset") || 0);
+  state.rankingOffset = Number.isInteger(offset) && offset >= 0 && offset <= 10000 ? offset : 0;
+  updateDiscoveryControls();
+}
+
+function updateDiscoveryControls() {
+  elements.discoveryQuery.value = state.filters.q;
+  elements.discoveryRating.value = state.filters.content_rating;
+  elements.discoveryMatch.value = state.filters.category_match;
+  elements.discoveryForm.querySelectorAll("[data-category-kind]").forEach((input) => {
+    input.checked = state.filters[input.dataset.categoryKind].includes(input.value);
+  });
+  elements.discoveryAdvanced.open = Boolean(state.filters.exclude_category.length || state.filters.category_match === "any");
+}
+
+function syncDiscoveryUrl() {
+  const url = new URL(window.location.href);
+  [...FILTER_KEYS, "mode", "offset"].forEach((key) => url.searchParams.delete(key));
+  appendFilterParams(url.searchParams, state.filters);
+  if (state.rankingMode !== "largest") url.searchParams.set("mode", state.rankingMode);
+  if (state.rankingOffset) url.searchParams.set("offset", String(state.rankingOffset));
+  if (url.href !== window.location.href) window.history.pushState(null, "", url);
+}
+
+function commitDiscoveryFilters() {
+  clearTimeout(searchTimer);
+  state.filters = {
+    q: elements.discoveryQuery.value.trim(),
+    content_rating: elements.discoveryRating.value,
+    category: Array.from(elements.discoveryCategories.querySelectorAll("input:checked"), (input) => input.value),
+    exclude_category: Array.from(elements.discoveryExclusions.querySelectorAll("input:checked"), (input) => input.value),
+    category_match: elements.discoveryMatch.value,
+  };
+  state.rankingOffset = 0;
+  syncDiscoveryUrl();
+  loadRanking();
+}
+
+async function loadCategories() {
+  elements.discoveryError.hidden = true;
+  elements.discoveryCategories.setAttribute("aria-busy", "true");
+  try {
+    const payload = await fetchJson("/api/v1/categories");
+    if (!Array.isArray(payload.items) || payload.items.some((item) => typeof item.key !== "string" || typeof item.label !== "string")) {
+      throw new ApiError("Category response was not recognized.", 500);
+    }
+    state.categoryLabels = new Map(payload.items.map((item) => [item.key, item.label]));
+    [[elements.discoveryCategories, "category"], [elements.discoveryExclusions, "exclude_category"]].forEach(([container, kind]) => {
+      container.replaceChildren(...payload.items.map((item) => {
+        const label = createElement("label", "category-option");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = item.key;
+        input.name = kind;
+        input.dataset.categoryKind = kind;
+        label.append(input, createElement("span", null, item.label));
+        return label;
+      }));
+    });
+    updateDiscoveryControls();
+    if (state.rankingPayload) renderRanking(state.rankingPayload);
+  } catch {
+    elements.discoveryError.hidden = false;
+  } finally {
+    elements.discoveryCategories.setAttribute("aria-busy", "false");
+  }
+}
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -365,8 +469,9 @@ function validateRankingPayload(payload, expectedMode) {
   return payload;
 }
 
-async function fetchRanking(mode, offset, signal) {
+async function fetchRanking(mode, offset, signal, filters = null) {
   const query = new URLSearchParams({ mode, limit: String(RANKING_LIMIT), offset: String(offset) });
+  appendFilterParams(query, filters);
   const payload = await fetchJson(`/api/v1/rankings?${query.toString()}`, signal);
   return validateRankingPayload(payload, mode);
 }
@@ -407,6 +512,16 @@ function createRankingEntity(item) {
   button.type = "button";
   button.addEventListener("click", () => openDetail(item.booru_id, button));
   text.append(button, createElement("span", "source-domain", publicDomain(item.canonical_url)));
+  const classification = item.classification;
+  if (classification) {
+    const rating = classification.content_rating === "safe" ? "Safe" : "NSFW";
+    const labels = classification.categories.map((key) => state.categoryLabels.get(key) || labelFromIdentifier(key));
+    const badge = createElement("span", "source-classification", [rating, ...labels.slice(0, 2)].join(" · ") + (labels.length > 2 ? ` +${labels.length - 2}` : ""));
+    badge.dataset.rating = classification.content_rating;
+    badge.title = [rating, ...labels].join(" · ");
+    text.append(badge);
+    if (classification.subset_of) text.append(createElement("span", "source-classification", `Safe view of ${labelFromIdentifier(classification.subset_of)}`));
+  }
   wrapper.append(text);
   return wrapper;
 }
@@ -578,13 +693,10 @@ async function loadRanking() {
   setRankingView("loading");
   setConnectionState("connecting", "Updating live ranking");
   try {
-    const payload = await fetchRanking(mode, offset, controller.signal);
+    const payload = await fetchRanking(mode, offset, controller.signal, state.filters);
     if (controller !== state.rankingController) return;
     state.rankingPayload = payload;
-    if (mode === "largest" && offset === 0) state.summaryLargest = payload;
-    if (mode === "fastest_growth" && offset === 0) state.summaryGrowth = payload;
     renderRanking(payload);
-    updateEcosystemSnapshot();
     setConnectionState("online", "Connected to source data");
   } catch (error) {
     if (error.name === "AbortError") return;
@@ -599,12 +711,13 @@ async function loadGrowthSummary() {
   state.summaryController?.abort();
   const controller = new AbortController();
   state.summaryController = controller;
-  try {
-    state.summaryGrowth = await fetchRanking("fastest_growth", 0, controller.signal);
-  } catch (error) {
-    if (error.name === "AbortError") return;
-    state.summaryGrowth = null;
-  }
+  const results = await Promise.allSettled([
+    fetchRanking("largest", 0, controller.signal),
+    fetchRanking("fastest_growth", 0, controller.signal),
+  ]);
+  if (controller !== state.summaryController) return;
+  state.summaryLargest = results[0].status === "fulfilled" ? results[0].value : null;
+  state.summaryGrowth = results[1].status === "fulfilled" ? results[1].value : null;
   if (controller === state.summaryController) updateEcosystemSnapshot();
 }
 
@@ -612,6 +725,7 @@ function selectRankingMode(mode) {
   if (!RANKING_MODES[mode] || mode === state.rankingMode) return;
   state.rankingMode = mode;
   state.rankingOffset = 0;
+  syncDiscoveryUrl();
   loadRanking();
 }
 
@@ -823,6 +937,27 @@ function renderHistory(booru, snapshots) {
   elements.historyBody.replaceChildren(...rows);
 }
 
+function renderClassification(booru) {
+  const classification = booru.classification;
+  elements.detailClassification.replaceChildren();
+  if (!classification) return;
+  const rating = classification.content_rating === "safe" ? "Exclusively Safe" : "Accepts NSFW content";
+  const labels = classification.categories.map((key) => state.categoryLabels.get(key) || labelFromIdentifier(key));
+  elements.detailClassification.append(createElement("p", null, `${rating} · ${labels.join(" · ")}`));
+  if (classification.subset_of) elements.detailClassification.append(createElement("p", null, `Filtered view of ${labelFromIdentifier(classification.subset_of)}. These collections overlap.`));
+  const reference = createElement("p", null, `Editorial classification · Reviewed ${classification.reviewed_at}`);
+  classification.reference_urls.forEach((value, index) => {
+    const url = safePublicUrl(value);
+    if (!url) return;
+    const link = createElement("a", null, `Reference ${index + 1}`);
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    reference.append(document.createTextNode(" · "), link);
+  });
+  elements.detailClassification.append(reference);
+}
+
 async function openDetail(booruId, returnFocus = null) {
   state.detailController?.abort();
   const controller = new AbortController();
@@ -847,6 +982,11 @@ async function openDetail(booruId, returnFocus = null) {
     elements.detailFamily.textContent = `${adapterName}${labelFromIdentifier(booru.adapter_family)} adapter family`;
     configureDetailLink(booru.canonical_url);
     const latest = booru.latest_snapshot;
+    renderClassification(booru);
+    const measurementUrl = safePublicUrl(latest?.source_url);
+    elements.detailMeasurementSource.hidden = !measurementUrl;
+    if (measurementUrl) elements.detailMeasurementSource.href = measurementUrl;
+    else elements.detailMeasurementSource.removeAttribute("href");
     elements.detailTotal.textContent = formatNumber(latest?.total_posts?.value);
     elements.detailTotalNote.textContent = latest?.total_posts ? `${provenanceLabel(latest.total_posts.provenance)} · ${formatDate(latest.captured_at)}` : "No accepted count";
     renderGrowth(growth);
@@ -881,16 +1021,48 @@ elements.rankingTabs.forEach((tab, index) => {
     target.click();
   });
 });
-elements.rankingRetry.addEventListener("click", loadRanking);
+elements.discoveryForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  commitDiscoveryFilters();
+});
+elements.discoveryForm.addEventListener("change", (event) => {
+  if (event.target !== elements.discoveryQuery) commitDiscoveryFilters();
+});
+elements.discoveryQuery.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  state.rankingController?.abort();
+  searchTimer = setTimeout(commitDiscoveryFilters, 250);
+});
+elements.discoveryClear.addEventListener("click", () => {
+  clearTimeout(searchTimer);
+  state.filters = { q: "", content_rating: "", category: [], exclude_category: [], category_match: "all" };
+  state.rankingOffset = 0;
+  updateDiscoveryControls();
+  syncDiscoveryUrl();
+  loadRanking();
+  elements.discoveryQuery.focus({ preventScroll: true });
+});
+elements.discoveryRetry.addEventListener("click", loadCategories);
+window.addEventListener("popstate", () => {
+  clearTimeout(searchTimer);
+  restoreDiscoveryUrl();
+  loadRanking();
+});
+elements.rankingRetry.addEventListener("click", () => {
+  loadRanking();
+  loadGrowthSummary();
+});
 elements.rankingPrevious.addEventListener("click", () => {
   if (!state.rankingPayload || state.rankingOffset === 0) return;
   state.rankingOffset = Math.max(0, state.rankingOffset - RANKING_LIMIT);
+  syncDiscoveryUrl();
   loadRanking();
   document.querySelector("#rankings-title").scrollIntoView({ behavior: preferredScrollBehavior() });
 });
 elements.rankingNext.addEventListener("click", () => {
   if (!state.rankingPayload || state.rankingOffset + state.rankingPayload.items.length >= state.rankingPayload.total) return;
   state.rankingOffset += RANKING_LIMIT;
+  syncDiscoveryUrl();
   loadRanking();
   document.querySelector("#rankings-title").scrollIntoView({ behavior: preferredScrollBehavior() });
 });
@@ -912,7 +1084,8 @@ window.addEventListener("resize", () => {
   if (window.innerWidth > 540) setNavigationOpen(false);
 });
 
+restoreDiscoveryUrl();
 setActiveRankingMode(state.rankingMode);
-Promise.allSettled([loadRanking(), loadGrowthSummary()]).then(() => {
+Promise.allSettled([loadCategories(), loadRanking(), loadGrowthSummary()]).then(() => {
   elements.ecosystemMetrics.setAttribute("aria-busy", "false");
 });

@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from booruradar.core.enums import MetricProvenance
+from booruradar.discovery import CatalogFilters, ClassifiedIdentity, public_snapshot_source_url
 from booruradar.models.booru import Booru
 from booruradar.models.snapshot import BooruSnapshot
 from booruradar.services.analytics import (
@@ -67,10 +68,11 @@ class SnapshotRecord:
     booru_id: uuid.UUID
     captured_at: datetime
     total_posts: TotalPostsRecord | None
+    source_url: str | None = None
 
 
 @dataclass(frozen=True)
-class BooruRecord:
+class BooruRecord(ClassifiedIdentity):
     id: uuid.UUID
     name: str
     canonical_url: str
@@ -109,7 +111,7 @@ class ComparisonRecord:
 
 
 @dataclass(frozen=True)
-class LargestRankingEligibleRecord:
+class LargestRankingEligibleRecord(ClassifiedIdentity):
     rank: int
     booru_id: uuid.UUID
     name: str
@@ -120,12 +122,13 @@ class LargestRankingEligibleRecord:
     provenance: MetricProvenance
     latest_snapshot_id: uuid.UUID
     latest_captured_at: datetime
+    source_url: str | None = None
     unit: Literal["posts"] = field(default="posts", init=False)
     eligible: Literal[True] = field(default=True, init=False)
 
 
 @dataclass(frozen=True)
-class GrowthRankingEligibleRecord:
+class GrowthRankingEligibleRecord(ClassifiedIdentity):
     rank: int
     booru_id: uuid.UUID
     name: str
@@ -141,12 +144,13 @@ class GrowthRankingEligibleRecord:
     previous_captured_at: datetime
     elapsed_hours: float
     posts_delta: int
+    source_url: str | None = None
     posts_delta_unit: Literal["posts"] = field(default="posts", init=False)
     eligible: Literal[True] = field(default=True, init=False)
 
 
 @dataclass(frozen=True)
-class RankingIneligibleRecord:
+class RankingIneligibleRecord(ClassifiedIdentity):
     booru_id: uuid.UUID
     name: str
     canonical_url: str
@@ -187,7 +191,8 @@ class CatalogReadService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def list_boorus(self, *, limit: int, offset: int) -> tuple[BooruRecord, ...]:
+    async def list_boorus(self, *, limit: int, offset: int,
+                          filters: CatalogFilters = CatalogFilters()) -> tuple[BooruRecord, ...]:
         latest_snapshot_id = self._latest_snapshot_id()
         statement = (
             select(Booru, BooruSnapshot)
@@ -195,10 +200,13 @@ class CatalogReadService:
             .outerjoin(BooruSnapshot, BooruSnapshot.id == latest_snapshot_id)
             .where(Booru.is_enabled.is_(True))
             .order_by(func.lower(Booru.name), Booru.id)
-            .limit(limit)
-            .offset(offset)
         )
+        if not filters.active:
+            statement = statement.limit(limit).offset(offset)
         rows = (await self._session.execute(statement)).all()
+        if filters.active:
+            rows = [(booru, snapshot) for booru, snapshot in rows
+                    if filters.matches(booru.name, booru.canonical_url)][offset:offset + limit]
         return tuple(
             self._project_booru(booru, snapshot)
             for booru, snapshot in rows
@@ -299,6 +307,7 @@ class CatalogReadService:
         mode: RankingMode,
         limit: int,
         offset: int,
+        filters: CatalogFilters = CatalogFilters(),
     ) -> RankingResult:
         boorus, snapshots_by_booru = await self._load_ranking_history()
         eligible: list[LargestRankingEligibleRecord | GrowthRankingEligibleRecord] = []
@@ -334,6 +343,10 @@ class CatalogReadService:
             )
         )
         complete_result = (*ranked_eligible, *ineligible)
+        # Assign global ranks first, then filter, then paginate. Filtering never
+        # invents a new rank or discards an ineligible source's explanation.
+        matching_result = tuple(record for record in complete_result
+                                if filters.matches(record.name, record.canonical_url))
         unit: RankingUnit
         if mode is RankingMode.LARGEST:
             unit = "posts"
@@ -345,11 +358,11 @@ class CatalogReadService:
         return RankingResult(
             mode=mode,
             unit=unit,
-            total=len(boorus),
-            eligible_count=len(ranked_eligible),
+            total=len(matching_result),
+            eligible_count=sum(record.eligible for record in matching_result),
             limit=limit,
             offset=offset,
-            items=tuple(complete_result[offset : offset + limit]),
+            items=matching_result[offset : offset + limit],
         )
 
     @staticmethod
@@ -476,6 +489,7 @@ class CatalogReadService:
             provenance=total_posts.provenance,
             latest_snapshot_id=latest.id,
             latest_captured_at=latest.captured_at,
+            source_url=public_snapshot_source_url(latest.source_url),
         )
 
     @classmethod
@@ -549,6 +563,7 @@ class CatalogReadService:
             previous_captured_at=previous.captured_at,
             elapsed_hours=metrics.elapsed_hours,
             posts_delta=metrics.posts_delta,
+            source_url=public_snapshot_source_url(current.source_url),
         )
 
     @staticmethod
@@ -637,6 +652,7 @@ class CatalogReadService:
             booru_id=snapshot.booru_id,
             captured_at=snapshot.captured_at,
             total_posts=cls._project_total_posts(snapshot.metrics),
+            source_url=public_snapshot_source_url(snapshot.source_url),
         )
 
     @classmethod

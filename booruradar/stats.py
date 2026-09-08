@@ -14,12 +14,12 @@ from booruradar.services.analytics import (
     InvalidTimeIntervalError,
     calculate_growth_metrics,
 )
-from booruradar.targets import get_collection_target
+from booruradar.targets import COLLECTION_TARGETS, get_collection_target
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="BooruRadar historical analytics CLI")
-    parser.add_argument("target", help="Target booru: danbooru or safebooru")
+    parser.add_argument("target", help="Target booru: " + ", ".join(COLLECTION_TARGETS))
     return parser
 
 

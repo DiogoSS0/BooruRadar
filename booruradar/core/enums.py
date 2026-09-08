@@ -8,6 +8,9 @@ class AdapterFamily(StrEnum):
     GELBOORU = "gelbooru"
     SHIMMIE = "shimmie"
     CUSTOM = "custom"
+    MOEBOORU = "moebooru"
+    E621 = "e621"
+    PHILOMENA = "philomena"
 
 
 class MetricProvenance(StrEnum):

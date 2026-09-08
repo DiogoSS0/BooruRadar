@@ -8,6 +8,7 @@ from booruradar.adapters.base import (
     UnsupportedCapabilityError,
 )
 from booruradar.adapters.danbooru import DanbooruAdapter
+from booruradar.adapters.aggregate import E621Adapter, MoebooruAdapter, PhilomenaAdapter
 from booruradar.adapters.evidence import ResponseEvidence
 from booruradar.adapters.gelbooru import GelbooruAdapter
 from booruradar.adapters.registry import AdapterRegistry, registry
@@ -43,3 +44,6 @@ __all__ = [
 
 registry.register(DanbooruAdapter)
 registry.register(GelbooruAdapter)
+registry.register(MoebooruAdapter)
+registry.register(E621Adapter)
+registry.register(PhilomenaAdapter)

@@ -22,7 +22,7 @@ from booruradar.services import (
     sanitize_exception_message,
 )
 from booruradar.services.collection_lock import collection_lock
-from booruradar.targets import get_collection_target
+from booruradar.targets import COLLECTION_TARGETS, get_collection_target
 
 
 MINIMUM_COLLECTION_INTERVAL = timedelta(hours=20)
@@ -72,7 +72,7 @@ def _collection_client_options(settings: Settings, target_key: str) -> dict[str,
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="BooruRadar manual collection CLI")
-    parser.add_argument("target", help="Target booru: danbooru or safebooru")
+    parser.add_argument("target", help="Target booru: " + ", ".join(COLLECTION_TARGETS))
     parser.add_argument(
         "--force",
         action="store_true",
@@ -168,6 +168,7 @@ async def _collect_locked(
             canonical_url=target.canonical_url,
             adapter_family=target.adapter_family.value,
             adapter_name=target.adapter_name,
+            is_enabled=False,
         )
         session.add(booru)
         await session.commit()
@@ -204,6 +205,7 @@ async def _collect_locked(
                 service = DanbooruSnapshotCollectionService()
             else:
                 service = SnapshotCollectionService(policy=target.policy)
+            service.publish_on_success = booru.is_enabled is False and latest_snapshot is None
             result = await service.collect(session, booru, adapter)
     except Exception:
         if result is None:

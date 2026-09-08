@@ -1,10 +1,12 @@
-# Production Danbooru Collection
+# Production Collection
 
 ## Scope
 
 Production collection runs as a one-shot Railway process that records normalized
 Danbooru metadata in the same PostgreSQL database used by the public web service.
-Only Danbooru may be scheduled. Safebooru remains an explicit manual target.
+Danbooru keeps its existing schedule; a separate catalog collector handles Safebooru
+and six additional explicit targets. The expanded schedule was authorized as part of
+the September 2026 discovery release.
 
 BooruRadar does not bypass Cloudflare, download or store media, persist direct media
 URLs, retain raw response bodies, or expose credentials.
@@ -15,8 +17,10 @@ URLs, retain raw response bodies, or expose credentials.
 GitHub main
 ├── web
 │   └── FastAPI and dashboard ───────────────┐
-└── collector-danbooru                       │
-    └── one-shot collection CLI ──> Danbooru │
+├── collector-danbooru                       │
+│   └── one-shot collection CLI ──> Danbooru │
+└── collector-catalog                       │
+    └── sequential one-shot ──> other sites │
                                              v
                                       Railway PostgreSQL
 ```
@@ -25,6 +29,7 @@ The processes have separate responsibilities:
 
 - `web` serves HTTP traffic and reads public catalog projections;
 - `collector-danbooru` performs one collection attempt and exits;
+- `collector-catalog` collects seven explicit targets sequentially and exits;
 - PostgreSQL stores durable crawl-run evidence and accepted snapshots.
 
 The collector has no public domain, HTTP server, or healthcheck. Its restart policy is
@@ -33,6 +38,29 @@ The collector has no public domain, HTTP server, or healthcheck. Its restart pol
 CLI directly.
 
 ## Railway service configuration
+
+All operations target the `production` environment explicitly. Publish the site to
+`web`; the CLI's linked default can be `collector-danbooru`.
+
+| Service | Start command | Daily UTC schedule |
+| --- | --- | --- |
+| `collector-danbooru` | `python -m booruradar.collect danbooru` | `17 3 * * *` |
+| `collector-catalog` | `python -m booruradar.collect_catalog` | `17 4 * * *` |
+
+Both services use the same Postgres reference, no public domain or healthcheck, and
+restart policy `NEVER`. `collector-catalog` runs Safebooru, Konachan, Konachan Safe,
+Yande.re, e621, Derpibooru, and AIBooru; it never invokes Danbooru. A target failure
+does not stop subsequent targets. `CATALOG_FAILURES=0` means every attempt succeeded
+or was skipped by the interval/lock checks; nonzero means inspect the target results.
+
+For a new catalog collector: create it without a cron, set its start command and
+Postgres reference, deploy the tested code, and inspect its terminal collection logs.
+Verify eight enabled sources with accepted snapshots through `/api/v1/boorus` and
+`/api/v1/rankings`, then enable `17 4 * * *` and verify `nextCronRunAt`. The first
+successful snapshot enables each new source atomically. No initial-data import,
+fabricated backfill, migration, or media storage is needed.
+
+The remaining Danbooru-specific examples apply to its independent collector:
 
 | Setting | Value |
 | --- | --- |
@@ -184,7 +212,13 @@ FROM boorus AS b
 LEFT JOIN booru_snapshots AS s ON s.booru_id = b.id
 WHERE b.canonical_url IN (
     'https://danbooru.donmai.us',
-    'https://safebooru.org'
+    'https://safebooru.org',
+    'https://konachan.com',
+    'https://konachan.net',
+    'https://yande.re',
+    'https://e621.net',
+    'https://derpibooru.org',
+    'https://aibooru.online'
 )
 GROUP BY b.id, b.name
 ORDER BY lower(b.name), b.id;
@@ -208,8 +242,8 @@ Only after remote and database validation, configure:
 
 Railway cron uses UTC. This is 03:17 in Lisbon during standard time and 04:17 during
 daylight-saving time. It stays fixed in UTC when Lisbon changes offset. A daily run
-comfortably exceeds the 20-hour interval. Attach it only to `collector-danbooru`;
-never schedule Safebooru or replace the command with generic target fan-out.
+comfortably exceeds the 20-hour interval. Attach `17 3 * * *` only to
+`collector-danbooru`; use `17 4 * * *` on the separate `collector-catalog` service.
 
 ## Failure handling
 

@@ -10,10 +10,14 @@ BooruRadar is an open-source, metadata-only discovery platform for public booru
 communities. It collects accepted history for explicit targets, exposes a read-only
 catalog API, and serves a public homepage for exploring and comparing that data:
 
-- `danbooru` uses the modern Danbooru adapter and records `total_posts` as
-  `estimated`;
-- `safebooru` uses the Gelbooru-family adapter and records `total_posts` as
-  `observed`.
+- `danbooru` and `aibooru` use modern Danbooru aggregate estimates;
+- `safebooru` uses the Gelbooru-family reported counter;
+- `konachan`, `konachan-safe`, and `yandere` use Moebooru reported counters;
+- `e621` uses its public homepage counter, avoiding the capped search count;
+- `derpibooru` uses Philomena with its public Everything filter.
+
+The latter six counters are `observed`. Konachan Safe is a filtered view of
+Konachan; source collections overlap and are never summed as unique posts.
 
 Adapters normalize public aggregate data and the minimum recent-post metadata needed
 for inspection. BooruRadar does not download or persist image/video bytes, direct
@@ -64,6 +68,7 @@ Available surfaces:
 - `GET /health` reports process liveness;
 - `GET /health/ready` also checks PostgreSQL;
 - `GET /api/v1/boorus` lists enabled boorus and their latest snapshot;
+- `GET /api/v1/categories` lists the editorial community taxonomy;
 - `GET /api/v1/boorus/{booru_id}` returns one enabled booru;
 - `GET /api/v1/boorus/{booru_id}/snapshots` returns recent accepted history;
 - `GET /api/v1/boorus/{booru_id}/growth` returns latest-pair growth or an explicit
@@ -80,13 +85,28 @@ section stays in a truthful history-accumulating state until an ecosystem-wide s
 exists. These surfaces expose normalized aggregate metrics and provenance, never
 adapter response payloads or media data.
 
+Both `/api/v1/boorus` and `/api/v1/rankings` accept `q` (name/domain),
+`content_rating=safe|nsfw`, repeated `category` and `exclude_category`, and
+`category_match=all|any` (default `all`). Safe means exclusively Safe communities;
+NSFW includes mixed communities accepting adult content. Categories describe
+communities, not individual posts or measured category counts. Unknown categories
+return HTTP 422. Exclusions always apply, including when the same category is included.
+
+Example: `/api/v1/rankings?content_rating=nsfw&category=anime&exclude_category=ai-generated`.
+Global ranks are assigned before filtering; matching counts and pagination apply to
+the filtered result. The homepage restores filters, mode, and page from its URL;
+the ecosystem summary stays global. Classifications include references, a review
+date, and an editorial basis. Snapshot `source_url` exposes only known aggregate
+endpoints; arbitrary stored crawl URLs remain private.
+
 ## Manual collection
 
-Use the configured application database and invoke either target explicitly:
+Use the configured application database and invoke a target explicitly:
 
 ```bash
 .venv/bin/python -m booruradar.collect danbooru
 .venv/bin/python -m booruradar.collect safebooru
+.venv/bin/python -m booruradar.collect konachan
 ```
 
 Danbooru can optionally use its official HTTP Basic Auth credentials from
@@ -108,21 +128,26 @@ collection service. `--force` bypasses only this interval:
 ```
 
 Hard-invalid normalization and the historical anomaly policy still apply under
-`--force`. Any production automation is restricted to the explicit `danbooru` target
-as a one-shot Railway process. Safebooru remains manual: no production cron or generic
-multi-target schedule includes it. The polling worker remains an unused compatibility
-shell.
+`--force`. New sources remain disabled until their first accepted snapshot commits
+atomically with publication. A failure preserves previous accepted history.
+
+Danbooru keeps its independent daily Railway collector. The separate
+`python -m booruradar.collect_catalog` one-shot collects Safebooru and the six new
+sources sequentially at 04:17 UTC daily, isolating failures and preserving the same
+interval and lock checks. It exits nonzero if any target failed; a minimum-interval
+skip is successful. Neither cron uses `--force` or process restart retries.
 
 See [the production collection runbook](docs/production-collection.md) for Railway
 configuration, result interpretation, database verification, scheduling, and recovery.
 
 ## Historical analytics
 
-The stats CLI supports both targets and performs no HTTP requests or database writes:
+The stats CLI supports all configured targets and performs no HTTP requests or database writes:
 
 ```bash
 .venv/bin/python -m booruradar.stats danbooru
 .venv/bin/python -m booruradar.stats safebooru
+.venv/bin/python -m booruradar.stats e621
 ```
 
 Growth uses the latest two accepted snapshots for the selected booru. Both
@@ -152,6 +177,14 @@ BOORURADAR_RUN_POSTGRES_TESTS=1 \
 
 `BOORURADAR_RUN_POSTGRES_TESTS=1` is the guard that enables the module. Never point
 that command at `booruradar_history` or another database whose rows must be retained.
+
+Browser acceptance checks use a separate Python environment with Playwright and a
+running API. They compare browser results against real API responses without writing
+to the database:
+
+```bash
+python tests/browser/discovery.py http://127.0.0.1:8019 /tmp/booruradar-preview
+```
 
 Stop local PostgreSQL without deleting its named volume:
 

@@ -63,9 +63,11 @@ class SnapshotCollectionService:
         *,
         policy: SnapshotCollectionPolicy,
         inspection_service: BooruInspectionService | None = None,
+        publish_on_success: bool = False,
     ) -> None:
         self.policy = policy
         self.inspection_service = inspection_service or BooruInspectionService()
+        self.publish_on_success = publish_on_success
 
     async def collect(
         self,
@@ -149,6 +151,8 @@ class SnapshotCollectionService:
                 quality_flags=(),
             )
             session.add(snapshot)
+            if self.publish_on_success:
+                booru.is_enabled = True
             await session.commit()
             return SnapshotCollectionResult(crawl_run=current_run, snapshot=snapshot)
         except asyncio.CancelledError:

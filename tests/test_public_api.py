@@ -12,6 +12,7 @@ from apps.api.main import create_app
 from apps.api.routes.boorus import get_catalog_service
 from booruradar.core.config import Settings
 from booruradar.core.enums import MetricProvenance
+from booruradar.discovery import CatalogFilters
 from booruradar.models.booru import Booru
 from booruradar.models.snapshot import BooruSnapshot
 from booruradar.services.catalog import (
@@ -151,7 +152,7 @@ class IsolatedCatalog:
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
 
-    async def list_boorus(self, *, limit: int, offset: int) -> tuple[BooruRecord, ...]:
+    async def list_boorus(self, *, limit: int, offset: int, filters: CatalogFilters = CatalogFilters()) -> tuple[BooruRecord, ...]:
         self.calls.append(("list_boorus", limit, offset))
         return (BOORU_A, BOORU_B)
 
@@ -207,6 +208,7 @@ class IsolatedCatalog:
         mode: RankingMode,
         limit: int,
         offset: int,
+        filters: CatalogFilters = CatalogFilters(),
     ) -> RankingResult:
         self.calls.append(("rank_boorus", mode, limit, offset))
         if mode is RankingMode.LARGEST:
@@ -286,7 +288,6 @@ def test_booru_list_is_bounded_and_projects_only_safe_public_fields() -> None:
     assert payload["items"][0]["adapter_name"] == "danbooru-v1"
     assert {
         "metrics",
-        "source_url",
         "crawl_run_id",
         "crawl_runs",
         "capabilities",
@@ -334,6 +335,7 @@ def test_growth_has_typed_available_and_unavailable_results() -> None:
         "status": "available",
         "booru_id": str(BOORU_A_ID),
         "previous_snapshot": {
+            "source_url": None,
             "id": str(SNAPSHOT_A_PREVIOUS.id),
             "booru_id": str(BOORU_A_ID),
             "captured_at": SNAPSHOT_A_PREVIOUS.captured_at.isoformat().replace(
@@ -347,6 +349,7 @@ def test_growth_has_typed_available_and_unavailable_results() -> None:
             },
         },
         "current_snapshot": {
+            "source_url": None,
             "id": str(SNAPSHOT_A_CURRENT.id),
             "booru_id": str(BOORU_A_ID),
             "captured_at": SNAPSHOT_A_CURRENT.captured_at.isoformat().replace(
@@ -420,6 +423,7 @@ def test_ranking_response_is_typed_paginated_and_excludes_internal_fields() -> N
         "canonical_url": BOORU_B.canonical_url,
         "adapter_family": BOORU_B.adapter_family,
         "adapter_name": BOORU_B.adapter_name,
+        "classification": None,
         "rank": None,
         "eligible": False,
         "reason": "insufficient_history",
@@ -427,7 +431,6 @@ def test_ranking_response_is_typed_paginated_and_excludes_internal_fields() -> N
     assert "value" not in payload["items"][1]
     assert {
         "metrics",
-        "source_url",
         "crawl_run_id",
         "details",
         "responses",
@@ -477,6 +480,7 @@ def test_openapi_documents_typed_get_only_public_endpoints() -> None:
     public_paths = {path: operations for path, operations in paths.items() if path.startswith("/api/v1")}
 
     assert set(public_paths) == {
+        "/api/v1/categories",
         "/api/v1/boorus",
         "/api/v1/boorus/{booru_id}",
         "/api/v1/boorus/{booru_id}/snapshots",
@@ -580,4 +584,5 @@ def test_snapshot_service_is_one_deterministic_read_and_redacts_raw_metrics() ->
     assert "booru_snapshots.id DESC NULLS LAST" in sql
     assert "LIMIT" in sql
     assert "private_future_metric" not in repr(records)
-    assert "source_url" not in repr(records)
+    assert all(record.source_url is None for record in records)
+    assert "private-crawl-endpoint" not in repr(records)

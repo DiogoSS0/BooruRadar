@@ -20,6 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from booruradar.adapters.danbooru import DanbooruAdapter, DanbooruResponseError
 from booruradar.adapters.gelbooru import GelbooruAdapter
+from booruradar.adapters.aggregate import MoebooruAdapter
+from booruradar.adapters.base import AdapterResponseError
+from booruradar.targets import KONACHAN_TARGET
+from booruradar.discovery import CatalogFilters
 from booruradar.core.enums import AdapterFamily, CrawlRunStatus, MetricProvenance
 from booruradar.models import Booru, BooruSnapshot, CrawlRun
 from booruradar.services import (
@@ -58,6 +62,37 @@ def _assert_intended_test_database_name(name: str | None, *, source: str) -> str
     if "test" not in normalized and "integration" not in normalized:
         raise RuntimeError(f"{source} must name an explicit test/integration database")
     return normalized
+
+
+@pytest.mark.parametrize("scenario", ["accepted", "malformed", "commit_failure"])
+def test_new_source_is_published_atomically_with_first_accepted_snapshot(scenario):
+    class CommitFailureAdapter(MoebooruAdapter):
+        async def health_check(self):
+            return (await super().health_check()).model_copy(update={"status": "x" * 51})
+
+    async def exercise():
+        async with postgres_test_database() as database:
+            booru = database.make_booru(AdapterFamily.MOEBOORU, adapter_name="moebooru")
+            booru_id = booru.id
+            booru.is_enabled = False
+            async with AsyncSession(database.engine, expire_on_commit=False) as session:
+                session.add(booru)
+                await session.commit()
+                content = '<posts count="42"/>' if scenario != "malformed" else '<posts/>'
+                async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=content))) as client:
+                    adapter_type = CommitFailureAdapter if scenario == "commit_failure" else MoebooruAdapter
+                    service = SnapshotCollectionService(policy=KONACHAN_TARGET.policy, publish_on_success=True)
+                    if scenario == "accepted":
+                        await service.collect(session, booru, adapter_type(booru.canonical_url, client))
+                    else:
+                        with pytest.raises((AdapterResponseError, DataError)):
+                            await service.collect(session, booru, adapter_type(booru.canonical_url, client))
+            async with AsyncSession(database.engine) as session:
+                stored = await session.get(Booru, booru_id)
+                assert stored.is_enabled is (scenario == "accepted")
+                snapshots = (await session.execute(select(BooruSnapshot).where(BooruSnapshot.booru_id == booru_id))).scalars().all()
+                assert len(snapshots) == (1 if scenario == "accepted" else 0)
+    asyncio.run(exercise())
 
 
 def _configured_test_database() -> tuple[str, str]:
@@ -691,21 +726,22 @@ def test_target_scoped_advisory_lock_excludes_only_the_same_target() -> None:
 def test_ranking_window_query_uses_latest_two_and_uuid_tie_break_on_postgres() -> None:
     async def exercise() -> None:
         async with postgres_test_database() as database:
+            scope = str(uuid.uuid4())
             tied = database.make_booru(
                 AdapterFamily.DANBOORU,
                 adapter_name="ranking-tied",
             )
-            tied.name = "Tied"
+            tied.name = f"Tied {scope}"
             single = database.make_booru(
                 AdapterFamily.GELBOORU,
                 adapter_name="ranking-single",
             )
-            single.name = "Single"
+            single.name = f"Single {scope}"
             disabled = database.make_booru(
                 AdapterFamily.GELBOORU,
                 adapter_name="ranking-disabled",
             )
-            disabled.name = "Disabled"
+            disabled.name = f"Disabled {scope}"
             disabled.is_enabled = False
             captured = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 
@@ -789,19 +825,22 @@ def test_ranking_window_query_uses_latest_two_and_uuid_tie_break_on_postgres() -
                     mode=RankingMode.LARGEST,
                     limit=50,
                     offset=0,
+                    filters=CatalogFilters(q=scope),
                 )
                 growth = await service.rank_boorus(
                     mode=RankingMode.FASTEST_GROWTH,
                     limit=50,
                     offset=0,
+                    filters=CatalogFilters(q=scope),
                 )
 
             assert largest.total == 2
             assert largest.eligible_count == 2
-            assert [(item.name, item.value, item.rank) for item in largest.items] == [
-                ("Single", 500, 1),
-                ("Tied", 260, 2),
+            assert [(item.name, item.value) for item in largest.items] == [
+                (single.name, 500),
+                (tied.name, 260),
             ]
+            assert largest.items[0].rank < largest.items[1].rank
             reasons = {item.booru_id: item.reason for item in growth.items}
             assert reasons[single.id] is RankingIneligibleReason.INSUFFICIENT_HISTORY
             assert reasons[tied.id] is RankingIneligibleReason.INVALID_TIME_INTERVAL
