@@ -1,8 +1,14 @@
 # BooruRadar
 
-**Live demo:** https://web-production-58150.up.railway.app
+**Start here:** [Explore or contribute](https://web-production-58150.up.railway.app/welcome)
 
-**Status:** Public alpha
+**Live preview:** https://web-production-58150.up.railway.app
+
+**Contribute:** [Read the contribution guide](CONTRIBUTING.md) · [Issues and suggestions](https://github.com/DiogoSS0/BooruRadar/issues)
+
+**License:** [MIT](LICENSE); existing third-party license notices remain in place.
+
+**Status:** Public alpha — under construction. Features, design and data coverage are still evolving.
 
 **Deployment target:** Railway (`main` branch)
 
@@ -64,6 +70,8 @@ them.
 Available surfaces:
 
 - `GET /` serves the read-only dashboard;
+- `GET /welcome` introduces the project and links to the latest published preview
+  and contribution guide; it works without JavaScript or a database connection;
 - `/docs` serves interactive OpenAPI documentation;
 - `GET /health` reports process liveness;
 - `GET /health/ready` also checks PostgreSQL;

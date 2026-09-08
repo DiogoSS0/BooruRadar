@@ -32,9 +32,12 @@ SECURITY_HEADERS = {
 
 
 INDEX_DOCUMENT = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+WELCOME_DOCUMENT = (STATIC_DIR / "welcome.html").read_text(encoding="utf-8")
+WELCOME_STYLESHEET = (STATIC_DIR / "welcome.css").read_text(encoding="utf-8")
 STYLESHEET = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
 APPLICATION_SCRIPT = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 MASCOT_ASSET = (STATIC_DIR / "assets" / "booruradar-mascot.png").read_bytes()
+RELAXED_MASCOT_ASSET = (STATIC_DIR / "assets" / "booruradar-mascot-relaxed.png").read_bytes()
 WORDMARK_ASSET = (STATIC_DIR / "assets" / "booruradar-wordmark.svg").read_bytes()
 ICON_ASSET = (STATIC_DIR / "assets" / "booruradar-icon.svg").read_bytes()
 FONT_ASSET = (STATIC_DIR / "assets" / "manrope-latin.woff2").read_bytes()
@@ -61,10 +64,27 @@ async def application_script() -> Response:
     return _asset_response(APPLICATION_SCRIPT, "text/javascript")
 
 
+@router.get("/assets/welcome.css", include_in_schema=False)
+async def welcome_stylesheet() -> Response:
+    return _asset_response(WELCOME_STYLESHEET, "text/css")
+
+
 @router.get("/assets/booruradar-mascot.png", include_in_schema=False)
 async def mascot_asset() -> Response:
     return Response(
         content=MASCOT_ASSET,
+        media_type="image/png",
+        headers={
+            **SECURITY_HEADERS,
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
+
+
+@router.get("/assets/booruradar-mascot-relaxed.png", include_in_schema=False)
+async def relaxed_mascot_asset() -> Response:
+    return Response(
+        content=RELAXED_MASCOT_ASSET,
         media_type="image/png",
         headers={
             **SECURITY_HEADERS,
@@ -92,6 +112,17 @@ async def font_asset() -> Response:
 async def dashboard() -> HTMLResponse:
     return HTMLResponse(
         content=INDEX_DOCUMENT,
+        headers={
+            **SECURITY_HEADERS,
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@router.get("/welcome", include_in_schema=False, response_class=HTMLResponse)
+async def welcome() -> HTMLResponse:
+    return HTMLResponse(
+        content=WELCOME_DOCUMENT,
         headers={
             **SECURITY_HEADERS,
             "Cache-Control": "no-cache",
