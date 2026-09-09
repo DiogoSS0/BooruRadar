@@ -101,12 +101,13 @@ unknown. Any direct media attributes in the XML are discarded. Recent-post reque
 are capped at 1,000; tag requests are capped at 25 explicit names. When `tag_names`
 is `None`, no tag request is made.
 
-Safebooru is included in the daily `collect_catalog` one-shot, alongside the six new
-sources. Danbooru keeps its independent collector.
+Safebooru is included in the daily `collect_catalog` one-shot, alongside every other configured
+source except Danbooru. Danbooru keeps its independent collector.
 
 ## Aggregate-only adapters
 
-`aggregate.py` contains counter adapters for Moebooru, e621, and Philomena. These
+`aggregate.py` and `counters.py` contain counter adapters for the expanded catalog.
+See the [source guide](source-catalog.md) for the complete endpoint registry. These
 advertise only detection, health, and public statistics. Health reuses the validated
 count from the current inspection; recent posts and tags are unsupported. A blocked
 source fails once with bounded response evidence. HTTP success alone is insufficient:
@@ -125,6 +126,20 @@ missing, negative, fractional, boolean, or malformed counts are rejected.
   See [official API documentation](https://derpibooru.org/pages/api).
 - AIBooru: the existing Danbooru adapter and estimated-count policy. Danbooru
   credentials are never shared with this target.
+
+- Furbooru and Tantabus: validate system filter 2 has no hidden/spoilered tags or
+  complex expressions on each inspection, then read the search `total`. Filter drift
+  fails before fetching a potentially partial count.
+- Manebooru and Ponerpics: `/pages/stats`, the explicitly labelled non-deleted image
+  total. Their Everything filters still exclude tags, so search counts are not used.
+- Gelbooru, Realbooru, and HypnoHub: one contiguous sequence of `/counter/N.gif`
+  image tags in the homepage HTML, checking that each `alt` agrees with its digit.
+  Image bytes are never requested; visitor counters are ignored.
+- Xbooru and TBIB: aggregate-only Gelbooru DAPI XML; discard post objects.
+- Rule34 Paheal: the homepage's explicit `Serving N posts` text; discard other counts.
+- e-shuushuu: `/api/v1/images?per_page=1`, extract `total` only.
+- Cosbooru: `/counts/posts.json`, aggregate-only Danbooru estimate. No credentials
+  or recent-post requests are shared with this target.
 
 `targets.py` also owns the editorial classifications and reference URLs. These are
 community-level descriptions, separate from observed/estimated metrics. Unknown

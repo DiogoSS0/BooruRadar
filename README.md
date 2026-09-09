@@ -16,14 +16,15 @@ BooruRadar is an open-source, metadata-only discovery platform for public booru
 communities. It collects accepted history for explicit targets, exposes a read-only
 catalog API, and serves a public homepage for exploring and comparing that data:
 
-- `danbooru` and `aibooru` use modern Danbooru aggregate estimates;
-- `safebooru` uses the Gelbooru-family reported counter;
-- `konachan`, `konachan-safe`, and `yandere` use Moebooru reported counters;
-- `e621` uses its public homepage counter, avoiding the capped search count;
-- `derpibooru` uses Philomena with its public Everything filter.
+The catalog contains **22 configured sources**, published individually after their
+first accepted observation. See the [source registry and measurement guide](docs/source-catalog.md)
+for endpoints, provenance, coverage, and editorial references.
 
-The latter six counters are `observed`. Konachan Safe is a filtered view of
-Konachan; source collections overlap and are never summed as unique posts.
+- Danbooru, AIBooru, and Cosbooru use aggregate estimates (`estimated`).
+- The other 19 sources use counters reported by their public API or homepage (`observed`).
+- Daily collection covers all configured targets, with a separate Danbooru schedule.
+- Konachan Safe is explicitly a filtered view of Konachan. Other archives also overlap;
+  source collections are never summed as unique posts.
 
 Adapters normalize public aggregate data and the minimum recent-post metadata needed
 for inspection. BooruRadar does not download or persist image/video bytes, direct

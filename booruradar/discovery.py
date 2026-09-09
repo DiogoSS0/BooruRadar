@@ -24,6 +24,9 @@ class Category(StrEnum):
     SCANS = "scans"
     AI_GENERATED = "ai-generated"
     HENTAI = "hentai"
+    ANIMATION = "animation"
+    COSPLAY = "cosplay"
+    PHOTOGRAPHY = "photography"
 
 
 CATEGORY_LABELS = MappingProxyType({
@@ -31,6 +34,8 @@ CATEGORY_LABELS = MappingProxyType({
     Category.FURRY: "Furry", Category.ANTHRO: "Anthro", Category.PONY: "Pony",
     Category.WALLPAPERS: "Wallpapers", Category.SCANS: "Scans",
     Category.AI_GENERATED: "AI-generated", Category.HENTAI: "Adult hentai",
+    Category.ANIMATION: "Animation", Category.COSPLAY: "Cosplay",
+    Category.PHOTOGRAPHY: "Photography",
 })
 
 
@@ -47,6 +52,7 @@ class SourceClassification:
     reviewed_at: date
     subset_of: str | None = None
     basis: str = "editorial"
+    notes: str | None = None
 
 
 def classification_for_url(canonical_url: str) -> SourceClassification | None:

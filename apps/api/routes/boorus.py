@@ -49,8 +49,8 @@ CatalogService = Annotated[CatalogReadService, Depends(get_catalog_service)]
 async def get_catalog_filters(
     q: Annotated[str, Query(max_length=100, description="Case-insensitive community name or domain search.")] = "",
     content_rating: Annotated[ContentRating | None, Query(description="safe: exclusively Safe communities; nsfw: includes mixed communities accepting adult content.")] = None,
-    category: Annotated[list[Category] | None, Query(max_length=10, description="Repeat to include community categories.")] = None,
-    exclude_category: Annotated[list[Category] | None, Query(max_length=10, description="Exclude communities matching any of these categories.")] = None,
+    category: Annotated[list[Category] | None, Query(max_length=len(Category), description="Repeat to include community categories.")] = None,
+    exclude_category: Annotated[list[Category] | None, Query(max_length=len(Category), description="Exclude communities matching any of these categories.")] = None,
     category_match: Annotated[CategoryMatch, Query(description="Require all or any included categories. Exclusions always apply.")] = CategoryMatch.ALL,
 ) -> CatalogFilters:
     return CatalogFilters(q=q, content_rating=content_rating, category=tuple(category or ()),

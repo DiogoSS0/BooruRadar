@@ -39,6 +39,7 @@ class SourceClassificationResponse(ApiSchema):
     reviewed_at: date
     subset_of: str | None
     basis: Literal["editorial"] = "editorial"
+    notes: str | None = None
 
 
 class CategoryResponse(ApiSchema):

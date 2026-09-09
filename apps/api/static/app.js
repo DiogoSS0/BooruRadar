@@ -944,6 +944,7 @@ function renderClassification(booru) {
   const rating = classification.content_rating === "safe" ? "Exclusively Safe" : "Accepts NSFW content";
   const labels = classification.categories.map((key) => state.categoryLabels.get(key) || labelFromIdentifier(key));
   elements.detailClassification.append(createElement("p", null, `${rating} · ${labels.join(" · ")}`));
+  if (classification.notes) elements.detailClassification.append(createElement("p", null, classification.notes));
   if (classification.subset_of) elements.detailClassification.append(createElement("p", null, `Filtered view of ${labelFromIdentifier(classification.subset_of)}. These collections overlap.`));
   const reference = createElement("p", null, `Editorial classification · Reviewed ${classification.reviewed_at}`);
   classification.reference_urls.forEach((value, index) => {

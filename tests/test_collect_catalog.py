@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import patch
 
 from booruradar.collect_catalog import DAILY_TARGETS, run_catalog_collection
+from booruradar.targets import COLLECTION_TARGETS
 
 
 def test_batch_is_sequential_skips_are_successful_and_failures_are_isolated(capsys):
@@ -14,7 +15,8 @@ def test_batch_is_sequential_skips_are_successful_and_failures_are_isolated(caps
     with patch("booruradar.collect_catalog.run_collection", collect):
         assert asyncio.run(run_catalog_collection()) == 1
     assert calls == [[key] for key in DAILY_TARGETS]
-    assert len(calls) == 7
+    assert len(calls) == len(COLLECTION_TARGETS) - 1
+    assert set(DAILY_TARGETS) == set(COLLECTION_TARGETS) - {"danbooru"}
     assert "danbooru" not in DAILY_TARGETS
     output = capsys.readouterr().out
     assert "CATALOG_FAILURES=2" in output

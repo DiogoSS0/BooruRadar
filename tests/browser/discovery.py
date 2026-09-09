@@ -6,7 +6,7 @@ Run with a Python environment containing playwright:
 import json
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -33,19 +33,37 @@ with sync_playwright() as p:
         ranks = page.locator("#ranking-body .rank-number").all_text_contents()
         for text, item in zip(ranks, payload["items"]):
             if item["eligible"]: assert text == f"#{item['rank']}"
+        filters = [(key, value) for key, value in parse_qsl(query) if key not in ("offset", "mode", "limit")]
+        all_query = urlencode([*filters, ("limit", "100")])
+        catalog = page.request.get(base + "/api/v1/boorus?" + all_query).json()
+        ranking = page.request.get(base + "/api/v1/rankings?" + all_query).json()
+        assert {item["id"] for item in catalog["items"]} == {item["booru_id"] for item in ranking["items"]}
         return payload
 
     page.goto(base)
-    expect(page.locator("#discovery-categories input")).to_have_count(10)
+    taxonomy = page.request.get(base + "/api/v1/categories").json()["items"]
+    expect(page.locator("#discovery-categories input")).to_have_count(len(taxonomy))
     initial = verify_view()
     count = initial["total"]
     expect(page.locator("#snapshot-tracked")).to_have_text(str(count))
     checks.append(f"{count} real sources; browser rows and global ranks match the API")
     page.screenshot(path=str(output / "discovery-desktop.png"), full_page=True)
 
+    if count > 20:
+        page.locator("#ranking-next").click()
+        page.wait_for_url("**offset=20*")
+        second = verify_view()
+        assert second["offset"] == 20
+        assert not {item["booru_id"] for item in initial["items"]}.intersection(item["booru_id"] for item in second["items"])
+        page.reload()
+        assert verify_view()["offset"] == 20
+        checks.append("Second page, global ranks and pagination restored from URL")
+
     page.locator("#discovery-rating").select_option("safe")
     page.wait_for_url("**content_rating=safe*")
     safe = verify_view()
+    assert safe["offset"] == 0
+    assert "offset=" not in page.url
     assert all(item["classification"]["content_rating"] == "safe" for item in safe["items"])
     expect(page.locator("#snapshot-tracked")).to_have_text(str(count))
     checks.append("Safe excludes mixed communities; ecosystem summary remains global")
@@ -70,12 +88,12 @@ with sync_playwright() as p:
     verify_view()
     page.locator('#discovery-categories input[value="anime"]').check()
     page.locator('#discovery-categories input[value="furry"]').check()
-    assert verify_view()["total"] == 0
+    all_total = verify_view()["total"]
     page.locator("#discovery-advanced summary").click()
     page.locator("#discovery-match").select_option("any")
-    assert verify_view()["total"] > 0
+    assert verify_view()["total"] >= all_total
     page.go_back()
-    assert verify_view()["total"] == 0
+    assert verify_view()["total"] == all_total
     checks.append("All/any matching, empty state and browser history")
 
     page.locator("#discovery-query").fill("no-matching-community-829317")
@@ -95,6 +113,16 @@ with sync_playwright() as p:
         expect(page.locator("#compare-body tr")).to_have_count(2)
         page.locator("#compare-close").click()
     checks.append("Search, clear, source detail, evidence and comparison")
+
+    page.locator("#discovery-query").fill("e-shuushuu.net")
+    page.wait_for_url("**q=e-shuushuu.net*")
+    if verify_view()["total"]:
+        page.locator("#ranking-body .entity-button").first.click()
+        expect(page.locator("#detail-classification")).to_contain_text("artistic nudity")
+        page.locator("#detail-close").click()
+        checks.append("Editorial classification note is visible for a new source")
+    page.locator("#discovery-clear").click()
+    verify_view()
 
     for width in (320, 390, 768, 1366):
         page.set_viewport_size({"width": width, "height": 900})

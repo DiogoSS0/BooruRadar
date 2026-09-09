@@ -16,17 +16,23 @@ from booruradar.targets import COLLECTION_TARGETS
 
 
 class CatalogSession:
-    def __init__(self):
+    def __init__(self, targets=None):
         self.rows = []
         now = datetime(2026, 9, 8, tzinfo=UTC)
-        for index, target in enumerate(COLLECTION_TARGETS.values()):
+        # Keep the original contract fixture stable as new real sources are added.
+        if targets is None:
+            targets = [COLLECTION_TARGETS[key] for key in (
+                "danbooru", "safebooru", "konachan", "konachan-safe",
+                "yandere", "e621", "derpibooru", "aibooru",
+            )]
+        for index, target in enumerate(targets):
             booru = Booru(id=uuid.UUID(int=index + 1), name=target.name, canonical_url=target.canonical_url,
                           adapter_family=target.adapter_family, adapter_name=target.adapter_name, is_enabled=True)
             for rank in (1, 2):
                 snapshot = BooruSnapshot(id=uuid.uuid4(), booru_id=booru.id, crawl_run_id=uuid.uuid4(),
                                         captured_at=now - timedelta(days=rank - 1),
                                         source_url=target.policy.statistics_url(target.canonical_url),
-                                        metrics={"total_posts": {"value": 1000 - index * 70 - (rank - 1) * 10,
+                                        metrics={"total_posts": {"value": 100000 - index * 70 - (rank - 1) * 10,
                                                                  "unit": "posts", "provenance": target.policy.total_posts_provenance}})
                 self.rows.append((booru, snapshot, rank))
 
@@ -104,14 +110,14 @@ def test_api_documents_and_applies_identical_filters():
     assert item["classification"]["basis"] == "editorial"
     assert item["classification"]["reference_urls"]
     assert item["source_url"] == "https://danbooru.donmai.us/counts/posts.json"
-    assert len(request("/api/v1/categories").json()["items"]) == 10
+    assert len(request("/api/v1/categories").json()["items"]) == len(Category)
     paths = create_app().openapi()["paths"]
     for path in ("/api/v1/boorus", "/api/v1/rankings"):
         names = {parameter["name"] for parameter in paths[path]["get"]["parameters"]}
         assert {"q", "content_rating", "category", "exclude_category", "category_match"} <= names
 
 
-@pytest.mark.parametrize("query", ["category=unsupported", "exclude_category=unsupported", "content_rating=mixed", "category_match=invalid", "q=" + "a" * 101, "&".join(["category=anime"] * 11)])
+@pytest.mark.parametrize("query", ["category=unsupported", "exclude_category=unsupported", "content_rating=mixed", "category_match=invalid", "q=" + "a" * 101, "&".join(["category=anime"] * (len(Category) + 1))])
 def test_api_rejects_invalid_filters(query):
     assert request("/api/v1/rankings?" + query).status_code == 422
     assert request("/api/v1/boorus?" + query).status_code == 422
@@ -120,3 +126,28 @@ def test_api_rejects_invalid_filters(query):
 def test_source_url_is_allowlisted_not_a_raw_crawl_url():
     assert public_snapshot_source_url("https://example.com/private?api_key=secret") is None
     assert public_snapshot_source_url("https://e621.net/") == "https://e621.net/"
+
+
+def test_expanded_catalog_paginates_and_keeps_global_ranks_after_filtering():
+    async def exercise():
+        service = CatalogReadService(CatalogSession(COLLECTION_TARGETS.values()))
+        first = await service.rank_boorus(limit=20, offset=0, mode=RankingMode.LARGEST)
+        second = await service.rank_boorus(limit=20, offset=20, mode=RankingMode.LARGEST)
+        assert first.total == second.total == len(COLLECTION_TARGETS)
+        assert len(first.items) == 20
+        combined = [*first.items, *second.items]
+        assert [item.rank for item in combined] == list(range(1, len(COLLECTION_TARGETS) + 1))
+        assert len({item.booru_id for item in combined}) == len(COLLECTION_TARGETS)
+        furry = await service.rank_boorus(limit=20, offset=0, mode=RankingMode.LARGEST,
+                                         filters=CatalogFilters(category=(Category.FURRY,), exclude_category=(Category.AI_GENERATED,)))
+        assert [item.name for item in furry.items] == ["e621", "Furbooru"]
+        assert [item.rank for item in furry.items] == [item.rank for item in combined if item.name in ("e621", "Furbooru")]
+    asyncio.run(exercise())
+
+
+def test_new_categories_and_conservative_safe_classification():
+    assert CatalogFilters(category=(Category.ANIMATION,)).matches("Sakugabooru", "https://www.sakugabooru.com")
+    assert CatalogFilters(category=(Category.COSPLAY, Category.PHOTOGRAPHY)).matches("Cosbooru", "https://cos.lycore.co")
+    assert not CatalogFilters(content_rating=ContentRating.SAFE).matches("e-shuushuu", "https://e-shuushuu.net")
+    assert "artistic nudity" in COLLECTION_TARGETS["e-shuushuu"].classification.notes
+    assert {item["key"] for item in request("/api/v1/categories").json()["items"]} >= {"animation", "cosplay", "photography"}

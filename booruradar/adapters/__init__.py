@@ -9,6 +9,11 @@ from booruradar.adapters.base import (
 )
 from booruradar.adapters.danbooru import DanbooruAdapter
 from booruradar.adapters.aggregate import E621Adapter, MoebooruAdapter, PhilomenaAdapter
+from booruradar.adapters.counters import (
+    DanbooruCounterAdapter, GelbooruHomeCounterAdapter, GelbooruXmlCounterAdapter,
+    PhilomenaStatisticsAdapter, ShimmieHomeCounterAdapter, ShuushuuAdapter,
+    UnfilteredPhilomenaAdapter,
+)
 from booruradar.adapters.evidence import ResponseEvidence
 from booruradar.adapters.gelbooru import GelbooruAdapter
 from booruradar.adapters.registry import AdapterRegistry, registry
@@ -47,3 +52,10 @@ registry.register(GelbooruAdapter)
 registry.register(MoebooruAdapter)
 registry.register(E621Adapter)
 registry.register(PhilomenaAdapter)
+registry.register(DanbooruCounterAdapter)
+registry.register(GelbooruHomeCounterAdapter)
+registry.register(GelbooruXmlCounterAdapter)
+registry.register(PhilomenaStatisticsAdapter)
+registry.register(ShimmieHomeCounterAdapter)
+registry.register(ShuushuuAdapter)
+registry.register(UnfilteredPhilomenaAdapter)

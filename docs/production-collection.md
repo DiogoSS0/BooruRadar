@@ -5,7 +5,7 @@
 Production collection runs as a one-shot Railway process that records normalized
 Danbooru metadata in the same PostgreSQL database used by the public web service.
 Danbooru keeps its existing schedule; a separate catalog collector handles Safebooru
-and six additional explicit targets. The expanded schedule was authorized as part of
+and the other 20 explicit targets. The expanded schedule was authorized as part of
 the September 2026 discovery release.
 
 BooruRadar does not bypass Cloudflare, download or store media, persist direct media
@@ -29,7 +29,7 @@ The processes have separate responsibilities:
 
 - `web` serves HTTP traffic and reads public catalog projections;
 - `collector-danbooru` performs one collection attempt and exits;
-- `collector-catalog` collects seven explicit targets sequentially and exits;
+- `collector-catalog` collects 21 explicit targets sequentially and exits;
 - PostgreSQL stores durable crawl-run evidence and accepted snapshots.
 
 The collector has no public domain, HTTP server, or healthcheck. Its restart policy is
@@ -48,14 +48,14 @@ All operations target the `production` environment explicitly. Publish the site 
 | `collector-catalog` | `python -m booruradar.collect_catalog` | `17 4 * * *` |
 
 Both services use the same Postgres reference, no public domain or healthcheck, and
-restart policy `NEVER`. `collector-catalog` runs Safebooru, Konachan, Konachan Safe,
-Yande.re, e621, Derpibooru, and AIBooru; it never invokes Danbooru. A target failure
+restart policy `NEVER`. `collector-catalog` runs every entry in `COLLECTION_TARGETS` except
+Danbooru, in registry order. The [source guide](source-catalog.md) lists all 22 targets. A target failure
 does not stop subsequent targets. `CATALOG_FAILURES=0` means every attempt succeeded
 or was skipped by the interval/lock checks; nonzero means inspect the target results.
 
 For a new catalog collector: create it without a cron, set its start command and
 Postgres reference, deploy the tested code, and inspect its terminal collection logs.
-Verify eight enabled sources with accepted snapshots through `/api/v1/boorus` and
+Verify 22 enabled sources with accepted snapshots through `/api/v1/boorus` and
 `/api/v1/rankings`, then enable `17 4 * * *` and verify `nextCronRunAt`. The first
 successful snapshot enables each new source atomically. No initial-data import,
 fabricated backfill, migration, or media storage is needed.

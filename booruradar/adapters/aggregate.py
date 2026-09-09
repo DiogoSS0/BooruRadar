@@ -26,6 +26,7 @@ from booruradar.models.metrics import MetricEnvelope
 class AggregateAdapter(BooruAdapter):
     adapter_version = __version__
     statistics_path: str
+    total_posts_provenance = MetricProvenance.OBSERVED
 
     def __init__(self, base_url: str, client: httpx.AsyncClient) -> None:
         super().__init__(base_url, client)
@@ -71,20 +72,24 @@ class AggregateAdapter(BooruAdapter):
     async def fetch_public_statistics(self) -> PublicStatistics:
         if self._statistics is not None:
             return self._statistics
-        response = await self.client.get(f"{self.base_url}{self.statistics_path}")
-        self._evidence.append(fingerprint_response(response, "total_posts"))
-        if response.status_code == 403 or response.headers.get("cf-mitigated", "").lower() == "challenge":
-            raise SourceAccessBlockedError("source access was blocked")
-        response.raise_for_status()
+        response = await self._get_counter_response(self.statistics_path, "total_posts")
         value = self.parse_count(response)
         if type(value) is not int or value < 0:
             raise AdapterResponseError("counter must be a non-negative integer")
         self._statistics = PublicStatistics(
             collected_at=datetime.now(UTC),
             metrics={"total_posts": MetricEnvelope(value=value, unit="posts",
-                                                  provenance=MetricProvenance.OBSERVED)},
+                                                  provenance=self.total_posts_provenance)},
         )
         return self._statistics
+
+    async def _get_counter_response(self, path: str, identifier: str) -> httpx.Response:
+        response = await self.client.get(f"{self.base_url}{path}")
+        self._evidence.append(fingerprint_response(response, identifier))
+        if response.status_code == 403 or response.headers.get("cf-mitigated", "").lower() == "challenge":
+            raise SourceAccessBlockedError("source access was blocked")
+        response.raise_for_status()
+        return response
 
     def parse_count(self, response: httpx.Response) -> int:
         raise NotImplementedError

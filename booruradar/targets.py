@@ -10,7 +10,12 @@ from booruradar.adapters.base import BooruAdapter
 from booruradar.adapters.danbooru import DanbooruAdapter
 from booruradar.adapters.gelbooru import GelbooruAdapter
 from booruradar.adapters.aggregate import AggregateAdapter, E621Adapter, MoebooruAdapter, PhilomenaAdapter
-from booruradar.core.enums import AdapterFamily, MetricProvenance
+from booruradar.adapters.counters import (
+    DanbooruCounterAdapter, GelbooruHomeCounterAdapter, GelbooruXmlCounterAdapter,
+    PhilomenaStatisticsAdapter, ShimmieHomeCounterAdapter, ShuushuuAdapter,
+    UnfilteredPhilomenaAdapter,
+)
+from booruradar.core.enums import AdapterFamily
 from booruradar.discovery import Category, ContentRating, SourceClassification
 from booruradar.services.quality import (
     DANBOORU_SNAPSHOT_POLICY,
@@ -43,10 +48,11 @@ class CollectionTarget:
 
 
 def _classification(rating: str, categories: tuple[str, ...], *references: str,
-                    subset_of: str | None = None) -> SourceClassification:
+                    subset_of: str | None = None, reviewed_at: date = date(2026, 9, 8),
+                    notes: str | None = None) -> SourceClassification:
     return SourceClassification(
         content_rating=ContentRating(rating), categories=tuple(Category(c) for c in categories),
-        reference_urls=tuple(references), reviewed_at=date(2026, 9, 8), subset_of=subset_of,
+        reference_urls=tuple(references), reviewed_at=reviewed_at, subset_of=subset_of, notes=notes,
     )
 
 
@@ -82,7 +88,7 @@ def _aggregate_target(key: str, name: str, url: str, adapter: type[AggregateAdap
         key=key, name=name, canonical_url=url, adapter_family=adapter.family,
         adapter_name=adapter.adapter_name, adapter_type=adapter,
         policy=SnapshotCollectionPolicy(adapter_family=adapter.family,
-                                        total_posts_provenance=MetricProvenance.OBSERVED,
+                                        total_posts_provenance=adapter.total_posts_provenance,
                                         total_posts_unit="posts", statistics_path=adapter.statistics_path),
         classification=classification,
     )
@@ -118,10 +124,87 @@ AIBOORU_TARGET = CollectionTarget(
                                    "https://aibooru.online/wiki_pages/help:home"),
 )
 
+
+def _new_classification(rating: str, categories: tuple[str, ...], *references: str,
+                        notes: str | None = None) -> SourceClassification:
+    return _classification(rating, categories, *references, reviewed_at=date(2026, 9, 9), notes=notes)
+
+
+EXPANSION_TARGETS = (
+    _aggregate_target(
+        "gelbooru", "Gelbooru", "https://gelbooru.com", GelbooruHomeCounterAdapter,
+        _new_classification("nsfw", ("anime", "manga", "fan-art", "hentai"),
+                            "https://gelbooru.com/index.php?page=aboutus"),
+    ),
+    _aggregate_target(
+        "sakugabooru", "Sakugabooru", "https://www.sakugabooru.com", MoebooruAdapter,
+        _new_classification("nsfw", ("anime", "animation"),
+                            "https://www.sakugabooru.com/wiki/show?title=tag_guidelines",
+                            notes="Animation archive; its rating rules also permit nudity and graphic violence."),
+    ),
+    _aggregate_target(
+        "furbooru", "Furbooru", "https://furbooru.org", UnfilteredPhilomenaAdapter,
+        _new_classification("nsfw", ("furry", "anthro", "fan-art"), "https://furbooru.org/pages/rules"),
+    ),
+    _aggregate_target(
+        "tantabus", "Tantabus", "https://tantabus.ai", UnfilteredPhilomenaAdapter,
+        _new_classification("nsfw", ("pony", "fan-art", "ai-generated"), "https://tantabus.ai/pages/rules"),
+    ),
+    _aggregate_target(
+        "e6ai", "e6AI", "https://e6ai.net", E621Adapter,
+        _new_classification("nsfw", ("furry", "anthro", "ai-generated"), "https://e6ai.net/help/about"),
+    ),
+    _aggregate_target(
+        "xbooru", "Xbooru", "https://xbooru.com", GelbooruXmlCounterAdapter,
+        _new_classification("nsfw", ("anime", "fan-art", "hentai"),
+                            "https://xbooru.com/", "https://xbooru.com/index.php?page=help&topic=rating"),
+    ),
+    _aggregate_target(
+        "tbib", "The Big ImageBoard", "https://tbib.org", GelbooruXmlCounterAdapter,
+        _new_classification("nsfw", ("anime", "manga", "fan-art", "hentai"),
+                            "https://tbib.org/", "https://tbib.org/index.php?page=help&topic=rating",
+                            notes="An aggregate imageboard with substantial overlap with other boorus."),
+    ),
+    _aggregate_target(
+        "realbooru", "Realbooru", "https://realbooru.com", GelbooruHomeCounterAdapter,
+        _new_classification("nsfw", ("photography",), "https://realbooru.com/tos.php"),
+    ),
+    _aggregate_target(
+        "rule34-paheal", "Rule34 Paheal", "https://rule34.paheal.net", ShimmieHomeCounterAdapter,
+        _new_classification("nsfw", ("fan-art", "hentai"), "https://rule34.paheal.net/"),
+    ),
+    _aggregate_target(
+        "hypnohub", "HypnoHub", "https://hypnohub.net", GelbooruHomeCounterAdapter,
+        _new_classification("nsfw", ("anime", "fan-art", "hentai"),
+                            "https://hypnohub.net/", "https://hypnohub.net/index.php?page=help&topic=rating"),
+    ),
+    _aggregate_target(
+        "e-shuushuu", "e-shuushuu", "https://e-shuushuu.net", ShuushuuAdapter,
+        _new_classification("nsfw", ("anime", "manga", "fan-art", "cosplay"),
+                            "https://e-shuushuu.net/about", "https://e-shuushuu.net/rules",
+                            notes="Hentai is prohibited, but artistic nudity is allowed. Excluded from exclusively Safe results."),
+    ),
+    _aggregate_target(
+        "cosbooru", "Cosbooru", "https://cos.lycore.co", DanbooruCounterAdapter,
+        _new_classification("nsfw", ("cosplay", "photography"),
+                            "https://cos.lycore.co/wiki_pages/help:home",
+                            "https://cos.lycore.co/wiki_pages/howto:rate"),
+    ),
+    _aggregate_target(
+        "manebooru", "Manebooru", "https://manebooru.art", PhilomenaStatisticsAdapter,
+        _new_classification("nsfw", ("pony", "fan-art"), "https://manebooru.art/pages/rules"),
+    ),
+    _aggregate_target(
+        "ponerpics", "Ponerpics", "https://ponerpics.org", PhilomenaStatisticsAdapter,
+        _new_classification("nsfw", ("pony", "fan-art"), "https://ponerpics.org/pages/rules",
+                            notes="Pony archive with imports from other communities; collections overlap."),
+    ),
+)
+
 COLLECTION_TARGETS = MappingProxyType(
     {target.key: target for target in (
         DANBOORU_TARGET, SAFEBOORU_TARGET, KONACHAN_TARGET, KONACHAN_SAFE_TARGET,
-        YANDERE_TARGET, E621_TARGET, DERPIBOORU_TARGET, AIBOORU_TARGET,
+        YANDERE_TARGET, E621_TARGET, DERPIBOORU_TARGET, AIBOORU_TARGET, *EXPANSION_TARGETS,
     )}
 )
 
