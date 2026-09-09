@@ -9,8 +9,8 @@
     <title>BooruRadar · Public booru rankings</title>
     <link rel="icon" href="/assets/booruradar-icon.svg?v=mono-v1" type="image/svg+xml">
     <link rel="preload" href="/assets/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/assets/styles.css?v=mascot-relaxed-v1">
-    <script type="module" src="/assets/app.js?v=catalog-v3"></script>
+    <link rel="stylesheet" href="/assets/styles.css?v=categories-v1">
+    <script type="module" src="/assets/app.js?v=categories-v1"></script>
   </head>
   <body>
     <a class="skip-link" href="#rankings">Skip to rankings</a>
@@ -64,70 +64,85 @@
           </div>
           <p class="visually-hidden" id="ranking-connection" role="status" aria-live="polite"><span id="ranking-connection-label">Connecting to the public API</span></p>
 
-          <form class="discovery-filters" id="discovery-filters" role="search" aria-label="Find booru communities">
-            <div class="discovery-search-row">
-              <label class="discovery-search">Find a community<input id="discovery-query" type="search" name="q" maxlength="100" placeholder="Search name or domain" autocomplete="off"></label>
-              <label>Content<select id="discovery-rating" name="content_rating" aria-describedby="discovery-help"><option value="">All</option><option value="safe">Safe only</option><option value="nsfw">NSFW</option></select></label>
-              <button class="text-button" id="discovery-clear" type="button">Clear filters</button>
-            </div>
-            <fieldset class="category-fieldset"><legend>Categories</legend><div class="category-options" id="discovery-categories" aria-busy="true"></div></fieldset>
-            <details class="discovery-advanced" id="discovery-advanced">
-              <summary>Advanced filters</summary>
-              <label class="category-match-label">Match included categories<select id="discovery-match"><option value="all">All selected categories</option><option value="any">Any selected category</option></select></label>
-              <fieldset class="category-fieldset"><legend>Exclude categories</legend><div class="category-options" id="discovery-exclusions"></div></fieldset>
-            </details>
-            <p class="discovery-help" id="discovery-help">Filters describe communities. Safe excludes mixed communities; NSFW includes communities accepting adult content. Ranks stay global.</p>
-            <div class="notice notice-error" id="discovery-error" role="alert" hidden><span>Categories could not be loaded.</span><button class="text-button" id="discovery-retry" type="button">Retry categories</button></div>
-          </form>
+          <div class="index-layout">
+            <form class="discovery-filters" id="discovery-filters" role="search" aria-label="Filter booru communities">
+              <fieldset class="category-fieldset" aria-describedby="categories-help">
+                <legend>Categories <span class="category-count" id="category-count">0 selected</span></legend>
+                <p class="category-help" id="categories-help">Find communities around your interests.</p>
+                <div class="category-options" id="discovery-categories" aria-busy="true"></div>
+                <label class="category-match-label">Match<select id="discovery-match"><option value="all">All selected categories</option><option value="any">Any selected category</option></select></label>
+              </fieldset>
+              <fieldset class="category-fieldset category-fieldset-excluded" aria-describedby="exclusions-help">
+                <legend>Excluded Categories <span class="category-count" id="exclusion-count">0 selected</span></legend>
+                <p class="category-help" id="exclusions-help">Keep these out of your results.</p>
+                <div class="category-options" id="discovery-exclusions" aria-busy="true"></div>
+              </fieldset>
+              <div class="discovery-footer">
+                <a class="text-link filter-results-link" href="#ranking-results-start">View results <span aria-hidden="true">↓</span></a>
+              </div>
+              <p class="discovery-help">Categories describe whole communities, not individual posts.</p>
+              <div class="notice notice-error" id="discovery-error" role="alert" hidden><span>Categories could not be loaded.</span><button class="text-button" id="discovery-retry" type="button">Retry categories</button></div>
+            </form>
 
-          <div class="ranking-toolbar">
-            <div class="ranking-tabs" role="tablist" aria-label="Ranking mode">
-              <button class="ranking-tab is-active" id="ranking-tab-largest" type="button" role="tab" aria-selected="true" aria-controls="ranking-panel" data-ranking-mode="largest">Largest</button>
-              <button class="ranking-tab" id="ranking-tab-fastest-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="fastest_growth">Fastest Growth</button>
-              <button class="ranking-tab" id="ranking-tab-relative-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="relative_growth">Relative Growth</button>
+            <div class="index-results" id="ranking-results-start" tabindex="-1">
+              <div class="discovery-search-row">
+                <label class="discovery-search">Find a community<input id="discovery-query" type="search" name="q" form="discovery-filters" maxlength="100" placeholder="Search name or domain" autocomplete="off"></label>
+                <label>Content<select id="discovery-rating" name="content_rating" form="discovery-filters" aria-describedby="discovery-help"><option value="">All</option><option value="safe">Safe only</option><option value="nsfw">NSFW</option></select></label>
+                <button class="text-button" id="discovery-clear" type="button">Clear filters <span aria-hidden="true">↺</span></button>
+              </div>
+              <p class="discovery-help" id="discovery-help">Safe excludes mixed communities. NSFW includes communities accepting adult content. Ranks stay global.</p>
+
+              <div class="ranking-toolbar">
+                <div class="ranking-tabs" role="tablist" aria-label="Ranking mode">
+                  <button class="ranking-tab is-active" id="ranking-tab-largest" type="button" role="tab" aria-selected="true" aria-controls="ranking-panel" data-ranking-mode="largest">Largest</button>
+                  <button class="ranking-tab" id="ranking-tab-fastest-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="fastest_growth">Fastest Growth</button>
+                  <button class="ranking-tab" id="ranking-tab-relative-growth" type="button" role="tab" aria-selected="false" aria-controls="ranking-panel" data-ranking-mode="relative_growth">Relative Growth</button>
+                </div>
+                <div class="ranking-context"><span id="ranking-summary">Loading rankings</span></div>
+              </div>
+              <p class="ranking-description" id="ranking-mode-description">Latest valid total posts</p>
+
+              <div class="ranking-panel" id="ranking-panel" role="tabpanel" aria-labelledby="ranking-tab-largest">
+                <div class="ranking-loading" id="ranking-loading" role="status">
+                  <span class="visually-hidden">Loading ranking rows</span>
+                  <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+                  <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+                  <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
+                </div>
+                <div class="notice notice-error" id="ranking-error" role="alert" hidden>
+                  <div><strong>Ranking data temporarily unavailable.</strong><span id="ranking-error-message">The public API could not be reached.</span></div>
+                  <button class="button button-outline" id="ranking-retry" type="button">Try again</button>
+                </div>
+                <div class="notice" id="ranking-empty" role="status" hidden><div><strong>No communities match this view.</strong><span>Try clearing filters or selecting another combination. Sources appear after their first accepted observation.</span></div></div>
+                <div class="ranking-table-wrap" id="ranking-results" hidden>
+                  <table class="ranking-table">
+                    <caption class="visually-hidden" id="ranking-caption">Public booru ranking supplied by the BooruRadar API</caption>
+                    <thead><tr><th scope="col">Rank</th><th scope="col">Booru</th><th scope="col" id="ranking-metric-heading">Total posts</th><th scope="col">Provenance</th><th scope="col" id="ranking-context-heading">Measured</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody id="ranking-body"></tbody>
+                  </table>
+                </div>
+                <div class="ranking-pagination" id="ranking-pagination" hidden>
+                  <span id="ranking-page-status" aria-live="polite">Showing 0 sources</span>
+                  <div><button class="pagination-button" id="ranking-previous" type="button">← Previous</button><button class="pagination-button" id="ranking-next" type="button">Next →</button></div>
+                </div>
+              </div>
+
+              <div class="compare-dock" id="compare" aria-live="polite">
+                <div><strong>Compare selected boorus</strong><span id="compare-selection">Choose 2–8 sources from the ranking.</span></div>
+                <button class="button button-outline" id="compare-button" type="button" disabled>Compare selected</button>
+              </div>
+
+              <section class="compare-panel" id="compare-panel" aria-labelledby="compare-title" hidden>
+                <div class="panel-topbar"><div><p class="section-kicker">Side by side</p><h3 id="compare-title">Selected comparison</h3></div><button class="text-button" id="compare-close" type="button">Close comparison</button></div>
+                <div class="panel-loading" id="compare-loading" role="status" hidden><span class="loader" aria-hidden="true"></span><span>Loading compatible comparison data…</span></div>
+                <div class="notice notice-error" id="compare-error" role="alert" hidden><div><strong>Comparison is temporarily unavailable.</strong><span id="compare-error-message">The selected sources could not be compared.</span></div></div>
+                <div class="data-table-wrap" id="compare-results" role="region" aria-label="Selected booru comparison" tabindex="0" hidden>
+                  <table class="data-table"><caption>Latest public metadata for the selected boorus</caption><thead><tr><th scope="col">Source</th><th scope="col">Total posts</th><th scope="col">Evidence</th><th scope="col">Daily pace</th><th scope="col">Net change</th><th scope="col">Latest capture</th></tr></thead><tbody id="compare-body"></tbody></table>
+                </div>
+              </section>
+
             </div>
-            <div class="ranking-context"><span id="ranking-summary">Loading rankings</span></div>
           </div>
-          <p class="ranking-description" id="ranking-mode-description">Latest valid total posts</p>
-
-          <div class="ranking-panel" id="ranking-panel" role="tabpanel" aria-labelledby="ranking-tab-largest">
-            <div class="ranking-loading" id="ranking-loading" role="status">
-              <span class="visually-hidden">Loading ranking rows</span>
-              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
-              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
-              <div class="ranking-skeleton-row" aria-hidden="true"><i></i><span></span><span></span><span></span><span></span></div>
-            </div>
-            <div class="notice notice-error" id="ranking-error" role="alert" hidden>
-              <div><strong>Ranking data temporarily unavailable.</strong><span id="ranking-error-message">The public API could not be reached.</span></div>
-              <button class="button button-outline" id="ranking-retry" type="button">Try again</button>
-            </div>
-            <div class="notice" id="ranking-empty" role="status" hidden><div><strong>No communities match this view.</strong><span>Try clearing filters or selecting another combination. Sources appear after their first accepted observation.</span></div></div>
-            <div class="ranking-table-wrap" id="ranking-results" hidden>
-              <table class="ranking-table">
-                <caption class="visually-hidden" id="ranking-caption">Public booru ranking supplied by the BooruRadar API</caption>
-                <thead><tr><th scope="col">Rank</th><th scope="col">Booru</th><th scope="col" id="ranking-metric-heading">Total posts</th><th scope="col">Provenance</th><th scope="col" id="ranking-context-heading">Measured</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
-                <tbody id="ranking-body"></tbody>
-              </table>
-            </div>
-            <div class="ranking-pagination" id="ranking-pagination" hidden>
-              <span id="ranking-page-status" aria-live="polite">Showing 0 sources</span>
-              <div><button class="pagination-button" id="ranking-previous" type="button">← Previous</button><button class="pagination-button" id="ranking-next" type="button">Next →</button></div>
-            </div>
-          </div>
-
-          <div class="compare-dock" id="compare" aria-live="polite">
-            <div><strong>Compare selected boorus</strong><span id="compare-selection">Choose 2–8 sources from the ranking.</span></div>
-            <button class="button button-outline" id="compare-button" type="button" disabled>Compare selected</button>
-          </div>
-
-          <section class="compare-panel" id="compare-panel" aria-labelledby="compare-title" hidden>
-            <div class="panel-topbar"><div><p class="section-kicker">Side by side</p><h3 id="compare-title">Selected comparison</h3></div><button class="text-button" id="compare-close" type="button">Close comparison</button></div>
-            <div class="panel-loading" id="compare-loading" role="status" hidden><span class="loader" aria-hidden="true"></span><span>Loading compatible comparison data…</span></div>
-            <div class="notice notice-error" id="compare-error" role="alert" hidden><div><strong>Comparison is temporarily unavailable.</strong><span id="compare-error-message">The selected sources could not be compared.</span></div></div>
-            <div class="data-table-wrap" id="compare-results" role="region" aria-label="Selected booru comparison" tabindex="0" hidden>
-              <table class="data-table"><caption>Latest public metadata for the selected boorus</caption><thead><tr><th scope="col">Source</th><th scope="col">Total posts</th><th scope="col">Evidence</th><th scope="col">Daily pace</th><th scope="col">Net change</th><th scope="col">Latest capture</th></tr></thead><tbody id="compare-body"></tbody></table>
-            </div>
-          </section>
 
           <section class="detail-panel" id="detail-panel" aria-labelledby="detail-title" hidden>
             <div class="panel-topbar"><button class="text-button" id="detail-close" type="button">← Back to rankings</button><span class="detail-state">Accepted public data</span></div>

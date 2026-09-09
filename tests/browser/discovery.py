@@ -43,6 +43,10 @@ with sync_playwright() as p:
     page.goto(base)
     taxonomy = page.request.get(base + "/api/v1/categories").json()["items"]
     expect(page.locator("#discovery-categories input")).to_have_count(len(taxonomy))
+    expect(page.locator("#discovery-exclusions input")).to_have_count(len(taxonomy))
+    expect(page.locator("#discovery-exclusions input").first).to_be_visible()
+    expect(page.locator("#category-count")).to_have_text("0 selected")
+    expect(page.locator("#exclusion-count")).to_have_text("0 selected")
     initial = verify_view()
     count = initial["total"]
     expect(page.locator("#snapshot-tracked")).to_have_text(str(count))
@@ -72,12 +76,15 @@ with sync_playwright() as p:
     verify_view()
     page.locator("#discovery-rating").select_option("nsfw")
     page.locator('#discovery-categories input[value="anime"]').check()
-    page.locator("#discovery-advanced summary").click()
     page.locator('#discovery-exclusions input[value="ai-generated"]').check()
+    expect(page.locator("#category-count")).to_have_text("1 selected")
+    expect(page.locator("#exclusion-count")).to_have_text("1 selected")
     filtered = verify_view()
     page.reload()
     expect(page.locator('#discovery-categories input[value="anime"]')).to_be_checked()
     expect(page.locator('#discovery-exclusions input[value="ai-generated"]')).to_be_checked()
+    expect(page.locator("#category-count")).to_have_text("1 selected")
+    expect(page.locator("#exclusion-count")).to_have_text("1 selected")
     assert verify_view()["total"] == filtered["total"]
     for mode in ("fastest_growth", "relative_growth", "largest"):
         page.locator(f'[data-ranking-mode="{mode}"]').click()
@@ -89,7 +96,6 @@ with sync_playwright() as p:
     page.locator('#discovery-categories input[value="anime"]').check()
     page.locator('#discovery-categories input[value="furry"]').check()
     all_total = verify_view()["total"]
-    page.locator("#discovery-advanced summary").click()
     page.locator("#discovery-match").select_option("any")
     assert verify_view()["total"] >= all_total
     page.go_back()
@@ -97,11 +103,14 @@ with sync_playwright() as p:
     checks.append("All/any matching, empty state and browser history")
 
     page.locator("#discovery-query").fill("no-matching-community-829317")
+    page.locator("#discovery-query").press("Enter")
     page.wait_for_url("**q=no-matching-community-829317*")
     assert verify_view()["total"] == 0
     expect(page.locator("#ranking-empty")).to_be_visible()
     page.locator("#discovery-clear").click()
     verify_view()
+    expect(page.locator("#category-count")).to_have_text("0 selected")
+    expect(page.locator("#exclusion-count")).to_have_text("0 selected")
     page.locator("#ranking-body .entity-button").first.click()
     expect(page.locator("#detail-content")).to_be_visible()
     expect(page.locator("#detail-classification")).to_contain_text("Editorial classification")
@@ -124,15 +133,43 @@ with sync_playwright() as p:
     page.locator("#discovery-clear").click()
     verify_view()
 
-    for width in (320, 390, 768, 1366):
+    for width in (320, 390, 768, 1100, 1101, 1366):
         page.set_viewport_size({"width": width, "height": 900})
-        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+        expect(page.locator("#discovery-exclusions input").first).to_be_visible()
+        if width <= 390:
+            assert page.locator(".category-option").evaluate_all("options => options.every(option => option.getBoundingClientRect().height >= 44)")
     page.set_viewport_size({"width": 390, "height": 844})
+    page.locator("#discovery-query").evaluate("input => input.blur()")
+    page.evaluate("() => window.scrollTo(0, 0)")
     page.screenshot(path=str(output / "discovery-mobile.png"), full_page=True)
+    category = page.locator('#discovery-categories input[value="anime"]')
+    category.focus()
+    page.keyboard.press("Space")
+    expect(category).to_be_checked()
+    expect(page.locator("#category-count")).to_have_text("1 selected")
+    verify_view()
+    page.locator(".filter-results-link").click()
+    expect(page.locator("#ranking-results-start")).to_be_focused()
+    page.locator("#discovery-clear").click()
+    verify_view()
     page.locator("#discovery-query").focus()
     page.keyboard.press("Tab")
     expect(page.locator("#discovery-rating")).to_be_focused()
-    checks.append("No horizontal page overflow at 320/390/768/1366 px; keyboard navigation")
+    checks.append("Both category groups visible at 320/390/768/1100/1101/1366 px; no page overflow; 44 px mobile targets")
+    checks.append("Selection counts, keyboard toggles, search submission, clear and mobile result shortcut")
+
+    page.route("**/api/v1/categories", lambda route: route.fulfill(status=503, content_type="application/json", body='{"detail":"temporarily unavailable"}'))
+    page.goto(base + "/?category=anime&exclude_category=ai-generated")
+    expect(page.locator("#discovery-error")).to_be_visible()
+    expect(page.locator("#discovery-exclusions")).to_have_attribute("aria-busy", "false")
+    page.unroute("**/api/v1/categories")
+    page.locator("#discovery-retry").click()
+    expect(page.locator("#discovery-error")).to_be_hidden()
+    expect(page.locator("#category-count")).to_have_text("1 selected")
+    expect(page.locator("#exclusion-count")).to_have_text("1 selected")
+    verify_view()
+    checks.append("Category failure and retry restore both groups and their URL selections")
     assert not errors, errors
     browser.close()
 

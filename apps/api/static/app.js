@@ -87,7 +87,8 @@ const elements = {
   discoveryCategories: document.querySelector("#discovery-categories"),
   discoveryExclusions: document.querySelector("#discovery-exclusions"),
   discoveryMatch: document.querySelector("#discovery-match"),
-  discoveryAdvanced: document.querySelector("#discovery-advanced"),
+  categoryCount: document.querySelector("#category-count"),
+  exclusionCount: document.querySelector("#exclusion-count"),
   discoveryClear: document.querySelector("#discovery-clear"),
   discoveryError: document.querySelector("#discovery-error"),
   discoveryRetry: document.querySelector("#discovery-retry"),
@@ -209,7 +210,12 @@ function updateDiscoveryControls() {
   elements.discoveryForm.querySelectorAll("[data-category-kind]").forEach((input) => {
     input.checked = state.filters[input.dataset.categoryKind].includes(input.value);
   });
-  elements.discoveryAdvanced.open = Boolean(state.filters.exclude_category.length || state.filters.category_match === "any");
+  updateCategoryCounts();
+}
+
+function updateCategoryCounts() {
+  elements.categoryCount.textContent = `${elements.discoveryCategories.querySelectorAll("input:checked").length} selected`;
+  elements.exclusionCount.textContent = `${elements.discoveryExclusions.querySelectorAll("input:checked").length} selected`;
 }
 
 function syncDiscoveryUrl() {
@@ -231,6 +237,7 @@ function commitDiscoveryFilters() {
     category_match: elements.discoveryMatch.value,
   };
   state.rankingOffset = 0;
+  updateCategoryCounts();
   syncDiscoveryUrl();
   loadRanking();
 }
@@ -238,6 +245,7 @@ function commitDiscoveryFilters() {
 async function loadCategories() {
   elements.discoveryError.hidden = true;
   elements.discoveryCategories.setAttribute("aria-busy", "true");
+  elements.discoveryExclusions.setAttribute("aria-busy", "true");
   try {
     const payload = await fetchJson("/api/v1/categories");
     if (!Array.isArray(payload.items) || payload.items.some((item) => typeof item.key !== "string" || typeof item.label !== "string")) {
@@ -262,6 +270,7 @@ async function loadCategories() {
     elements.discoveryError.hidden = false;
   } finally {
     elements.discoveryCategories.setAttribute("aria-busy", "false");
+    elements.discoveryExclusions.setAttribute("aria-busy", "false");
   }
 }
 
@@ -1029,6 +1038,7 @@ elements.discoveryForm.addEventListener("submit", (event) => {
 elements.discoveryForm.addEventListener("change", (event) => {
   if (event.target !== elements.discoveryQuery) commitDiscoveryFilters();
 });
+elements.discoveryRating.addEventListener("change", commitDiscoveryFilters);
 elements.discoveryQuery.addEventListener("input", () => {
   clearTimeout(searchTimer);
   state.rankingController?.abort();
